@@ -65,3 +65,38 @@ func CreateTicketHandler(chatSvc *service.ChatService) gin.HandlerFunc {
 		c.JSON(http.StatusOK, ticket)
 	}
 }
+
+func SessionHistoryHandler(chatSvc *service.ChatService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := c.Param("session_id")
+		if sessionID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "session_id is required"})
+			return
+		}
+
+		history, err := chatSvc.GetSessionHistory(sessionID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, history)
+	}
+}
+
+func ClearSessionHandler(chatSvc *service.ChatService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := c.Param("session_id")
+		if sessionID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "session_id is required"})
+			return
+		}
+
+		if err := chatSvc.ClearSession(sessionID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "session cleared"})
+	}
+}

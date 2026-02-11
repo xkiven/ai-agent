@@ -7,7 +7,6 @@ import (
 )
 
 func Register(r *gin.Engine, chatSvc *service.ChatService) {
-
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
@@ -25,5 +24,11 @@ func Register(r *gin.Engine, chatSvc *service.ChatService) {
 	ticketGroup := r.Group("/ticket")
 	{
 		ticketGroup.POST("/create", api.CreateTicketHandler(chatSvc))
+	}
+
+	sessionGroup := r.Group("/session")
+	{
+		sessionGroup.GET("/:session_id/history", api.SessionHistoryHandler(chatSvc))
+		sessionGroup.DELETE("/:session_id", api.ClearSessionHandler(chatSvc))
 	}
 }

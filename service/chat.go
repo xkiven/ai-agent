@@ -4,25 +4,39 @@ import (
 	"ai-agent/internal/aiclient"
 	"ai-agent/model"
 	"context"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 type ChatService struct {
-	ai *aiclient.Client
+	ai       *aiclient.Client
+	sessions map[string]*model.Session
+	mu       sync.RWMutex
 }
 
 func NewChatService(ai *aiclient.Client) *ChatService {
 	return &ChatService{
-		ai: ai,
+		ai:       ai,
+		sessions: make(map[string]*model.Session),
 	}
 }
 
 func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) (*model.ChatResponse, error) {
+	session := s.getOrCreateSession(req.SessionID, req.UserID)
+
+	s.addMessage(session, model.RoleUser, req.Message)
+
+	session.Messages = append(session.Messages, model.Message{
+		Role:    model.RoleUser,
+		Content: req.Message,
+	})
+
 	intentReq := model.IntentRecognitionRequest{
 		Message:   req.Message,
 		SessionID: req.SessionID,
+		History:   s.getRecentHistory(session, 10),
 	}
 
 	intentResp, err := s.ai.RecognizeIntent(intentReq)
@@ -35,23 +49,98 @@ func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) 
 		return nil, err
 	}
 
-	var sessionState model.SessionState
 	switch intentResp.Intent {
 	case model.IntentFlow:
-		sessionState = model.SessionOnFlow
+		session.State = model.SessionOnFlow
+		session.FlowID = intentResp.FlowID
 	case model.IntentFAQ:
-		sessionState = model.SessionActive
+		session.State = model.SessionActive
+	case model.IntentUnknown:
+		session.State = model.SessionNew
 	default:
-		sessionState = model.SessionNew
+		session.State = model.SessionActive
 	}
+	session.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	s.addMessage(session, model.RoleAssistant, routeResp.Reply)
 
 	resp := &model.ChatResponse{
 		Reply:   routeResp.Reply,
 		Type:    intentResp.Intent,
-		Session: sessionState,
+		Session: session.State,
 	}
 
 	return resp, nil
+}
+
+func (s *ChatService) getOrCreateSession(sessionID, userID string) *model.Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if session, exists := s.sessions[sessionID]; exists {
+		return session
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	newSession := &model.Session{
+		ID:        sessionID,
+		UserID:    userID,
+		State:     model.SessionNew,
+		Messages:  []model.Message{},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	s.sessions[sessionID] = newSession
+	return newSession
+}
+
+func (s *ChatService) addMessage(session *model.Session, role model.MessageRole, content string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	session.Messages = append(session.Messages, model.Message{
+		Role:    role,
+		Content: content,
+	})
+
+	if len(session.Messages) > 100 {
+		session.Messages = session.Messages[len(session.Messages)-100:]
+	}
+}
+
+func (s *ChatService) getRecentHistory(session *model.Session, count int) []model.Message {
+	if len(session.Messages) <= count {
+		return session.Messages
+	}
+	return session.Messages[len(session.Messages)-count:]
+}
+
+func (s *ChatService) GetSessionHistory(sessionID string) (*model.SessionHistoryResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	session, exists := s.sessions[sessionID]
+	if !exists {
+		return &model.SessionHistoryResponse{
+			SessionID: sessionID,
+			Messages:  []model.Message{},
+			Count:     0,
+		}, nil
+	}
+
+	return &model.SessionHistoryResponse{
+		SessionID: sessionID,
+		Messages:  session.Messages,
+		Count:     len(session.Messages),
+	}, nil
+}
+
+func (s *ChatService) ClearSession(sessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.sessions, sessionID)
+	return nil
 }
 
 func (s *ChatService) RecognizeIntent(ctx context.Context, req model.IntentRecognitionRequest) (*model.IntentRecognitionResponse, error) {
