@@ -84,12 +84,16 @@ def recognize_intent_with_ai(message: str, history: Optional[List[Message]] = No
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"用户消息: {message}"}
     ]
-    
+
     # 如果有历史记录，添加到消息中
     if history:
+        print(f"添加历史记录: {len(history)} 条消息")
+    # 在用户消息前添加历史记录
         for msg in history:
             messages.insert(-1, {"role": msg.role, "content": msg.content})
-    
+    else:
+        print("没有历史记录")
+
     try:
         # 调用OpenAI API
         headers = {
