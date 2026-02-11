@@ -35,9 +35,10 @@ const (
 )
 
 type ChatRequest struct {
-	SessionID string `json:"session_id"`
-	Message   string `json:"message"`
-	UserID    string `json:"user_id"`
+	SessionID string    `json:"session_id"`
+	Message   string    `json:"message"`
+	UserID    string    `json:"user_id"`
+	History   []Message `json:"history,omitempty"`
 }
 
 type ChatResponse struct {

@@ -4,6 +4,7 @@ import (
 	"ai-agent/internal/aiclient"
 	"ai-agent/model"
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -26,12 +27,7 @@ func NewChatService(ai *aiclient.Client) *ChatService {
 func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) (*model.ChatResponse, error) {
 	session := s.getOrCreateSession(req.SessionID, req.UserID)
 
-	s.addMessage(session, model.RoleUser, req.Message)
-
-	session.Messages = append(session.Messages, model.Message{
-		Role:    model.RoleUser,
-		Content: req.Message,
-	})
+	log.Printf("[Session %s] 当前消息数: %d", req.SessionID, len(session.Messages))
 
 	intentReq := model.IntentRecognitionRequest{
 		Message:   req.Message,
@@ -39,15 +35,20 @@ func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) 
 		History:   s.getRecentHistory(session, 10),
 	}
 
+	log.Printf("[Session %s] 发送的历史记录数: %d", req.SessionID, len(intentReq.History))
+
 	intentResp, err := s.ai.RecognizeIntent(intentReq)
 	if err != nil {
 		return nil, err
 	}
 
-	routeResp, err := s.RouteByIntent(ctx, intentResp.Intent, req)
+	historyForChat := s.getRecentHistory(session, 10)
+	routeResp, err := s.RouteByIntent(ctx, intentResp.Intent, req, historyForChat)
 	if err != nil {
 		return nil, err
 	}
+
+	log.Printf("[Session %s] 处理后消息数: %d", req.SessionID, len(session.Messages))
 
 	switch intentResp.Intent {
 	case model.IntentFlow:
@@ -62,6 +63,7 @@ func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) 
 	}
 	session.UpdatedAt = time.Now().Format(time.RFC3339)
 
+	s.addMessage(session, model.RoleUser, req.Message)
 	s.addMessage(session, model.RoleAssistant, routeResp.Reply)
 
 	resp := &model.ChatResponse{
