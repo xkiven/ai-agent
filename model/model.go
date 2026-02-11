@@ -26,10 +26,21 @@ const (
 	TicketClosed   TicketStatus = "closed"
 )
 
+type MessageRole string
+
+const (
+	RoleUser      MessageRole = "user"
+	RoleAssistant MessageRole = "assistant"
+	RoleSystem    MessageRole = "system"
+)
+
 type ChatRequest struct {
-	SessionID string `json:"session_id"`
-	Message   string `json:"message"`
-	UserID    string `json:"user_id"`
+	SessionID string     `json:"session_id"`
+	Message   string     `json:"message"`
+	UserID    string     `json:"user_id"`
+	History   []Message  `json:"history,omitempty"`
+	Intent    IntentType `json:"intent,omitempty"`
+	FlowID    string     `json:"flow_id,omitempty"`
 }
 
 type ChatResponse struct {
@@ -53,8 +64,24 @@ type IntentRecognitionResponse struct {
 }
 
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    MessageRole `json:"role"`
+	Content string      `json:"content"`
+}
+
+type Session struct {
+	ID        string       `json:"id"`
+	UserID    string       `json:"user_id"`
+	State     SessionState `json:"state"`
+	Messages  []Message    `json:"messages"`
+	FlowID    string       `json:"flow_id,omitempty"`
+	CreatedAt string       `json:"created_at"`
+	UpdatedAt string       `json:"updated_at"`
+}
+
+type SessionHistoryResponse struct {
+	SessionID string    `json:"session_id"`
+	Messages  []Message `json:"messages"`
+	Count     int       `json:"count"`
 }
 
 type Ticket struct {
