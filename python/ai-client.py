@@ -22,6 +22,10 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
     user_id: Optional[str] = None
+    history: Optional[List[Message]] = None
+    intent: Optional[str] = None  # 由Go传入的意图类型
+    flow_id: Optional[str] = None  # 由Go传入的流程ID
+
 
 class ChatResponse(BaseModel):
     reply: str
@@ -57,7 +61,7 @@ def recognize_intent_with_ai(message: str, history: Optional[List[Message]] = No
     
     # 构建系统提示
     system_prompt = """
-你是一个专业的意图识别助手。请根据用户的消息，识别其意图类型。
+你是一个专业的意图识别助手。请根据用户的消息，识别其意图类型，不说废话，置信度在0-1之间。
 
 意图类型包括：
 1. faq - 常见问题，用户询问关于产品、服务的一般性问题
@@ -84,12 +88,16 @@ def recognize_intent_with_ai(message: str, history: Optional[List[Message]] = No
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"用户消息: {message}"}
     ]
-    
+
     # 如果有历史记录，添加到消息中
     if history:
+        print(f"添加历史记录: {len(history)} 条消息")
+    # 在用户消息前添加历史记录
         for msg in history:
             messages.insert(-1, {"role": msg.role, "content": msg.content})
-    
+    else:
+        print("没有历史记录")
+
     try:
         # 调用OpenAI API
         headers = {
@@ -194,27 +202,87 @@ def recognize_intent(message: str, history: Optional[List[Message]] = None) -> I
         print(f"备用规则识别结果: {result}")
         return result
 
+def generate_reply(message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None) -> str:
+    """根据意图和上下文生成回复"""
+    system_prompt = f""" 
+你是一个智能客服助手，不说废话，直接回答用户问题。 
+当前意图类型: {intent} 
+当前流程ID: {flow_id} 
+
+规则： 
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 faq，请直接回答用户问题 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+    ]
+
+    # 加入历史对话
+    if history:
+        for msg in history:
+            messages.append({"role": msg.role, "content": msg.content})
+
+    # 加入当前用户消息
+    messages.append({"role": "user", "content": message})
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OPENAI_API_KEY}"
+    }
+
+    data = {
+        "model": API_MODEL,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 500
+    }
+
+    try:
+        response = requests.post(
+            f"{OPENAI_BASE_URL}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"API请求失败: {response.status_code}, {response.text}")
+
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        print(f"生成回复失败: {e}")
+        return "抱歉，当前系统繁忙，请稍后再试。"
+
+
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
-    # 识别意图
-    intent_resp = recognize_intent(req.message)
-    
+    """根据传入的意图和历史记录生成回复，不再进行意图识别"""
+    print(f"收到聊天请求: message={req.message}, intent={req.intent}, flow_id={req.flow_id}")
+
+    # 生成回复
+    reply = generate_reply(req.message, req.intent or "unknown", req.flow_id, req.history)
+
     # 根据意图类型确定会话状态
-    if intent_resp.intent == "flow":
+    if req.intent == "flow":
         session_state = "on_flow"
-    elif intent_resp.intent == "faq":
+    elif req.intent == "faq":
         session_state = "active"
     else:
         session_state = "new"
-    
+
     return ChatResponse(
-        reply=intent_resp.reply,
-        type=intent_resp.intent,
+        reply=reply,
+        type=req.intent or "unknown",
         session_state=session_state
     )
 
 @app.post("/intent/recognize", response_model=IntentRecognitionResponse)
 def recognize_intent_endpoint(req: IntentRecognitionRequest):
+    """只做意图识别，不生成回复"""
     return recognize_intent(req.message, req.history)
 
 @app.post("/ticket/create", response_model=Ticket)
