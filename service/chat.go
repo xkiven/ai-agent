@@ -149,12 +149,12 @@ func (s *ChatService) RecognizeIntent(ctx context.Context, req model.IntentRecog
 	return s.ai.RecognizeIntent(req)
 }
 
-func (s *ChatService) RouteByIntent(ctx context.Context, intent model.IntentType, req model.ChatRequest) (*model.ChatResponse, error) {
+func (s *ChatService) RouteByIntent(ctx context.Context, intent model.IntentType, req model.ChatRequest, history []model.Message) (*model.ChatResponse, error) {
 	switch intent {
 	case model.IntentFAQ:
-		return s.handleFAQ(ctx, req)
+		return s.handleFAQ(ctx, req, history)
 	case model.IntentFlow:
-		return s.handleFlow(ctx, req)
+		return s.handleFlow(ctx, req, history)
 	case model.IntentUnknown:
 		return s.handleUnknown(ctx, req)
 	default:
@@ -162,12 +162,24 @@ func (s *ChatService) RouteByIntent(ctx context.Context, intent model.IntentType
 	}
 }
 
-func (s *ChatService) handleFAQ(ctx context.Context, req model.ChatRequest) (*model.ChatResponse, error) {
-	return s.ai.Chat(req)
+func (s *ChatService) handleFAQ(ctx context.Context, req model.ChatRequest, history []model.Message) (*model.ChatResponse, error) {
+	chatReq := model.ChatRequest{
+		SessionID: req.SessionID,
+		Message:   req.Message,
+		UserID:    req.UserID,
+		History:   history,
+	}
+	return s.ai.Chat(chatReq)
 }
 
-func (s *ChatService) handleFlow(ctx context.Context, req model.ChatRequest) (*model.ChatResponse, error) {
-	return s.ai.Chat(req)
+func (s *ChatService) handleFlow(ctx context.Context, req model.ChatRequest, history []model.Message) (*model.ChatResponse, error) {
+	chatReq := model.ChatRequest{
+		SessionID: req.SessionID,
+		Message:   req.Message,
+		UserID:    req.UserID,
+		History:   history,
+	}
+	return s.ai.Chat(chatReq)
 }
 
 func (s *ChatService) handleUnknown(ctx context.Context, req model.ChatRequest) (*model.ChatResponse, error) {
