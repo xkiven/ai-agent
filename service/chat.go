@@ -163,6 +163,10 @@ func (s *ChatService) RouteByIntent(ctx context.Context, intent model.IntentType
 }
 
 func (s *ChatService) handleFAQ(ctx context.Context, req model.ChatRequest, history []model.Message) (*model.ChatResponse, error) {
+	log.Printf("[handleFAQ] session=%s, history_count=%d", req.SessionID, len(history))
+	for i, msg := range history {
+		log.Printf("[handleFAQ] history[%d]: role=%s, content=%s", i, msg.Role, msg.Content)
+	}
 	chatReq := model.ChatRequest{
 		SessionID: req.SessionID,
 		Message:   req.Message,
@@ -173,6 +177,10 @@ func (s *ChatService) handleFAQ(ctx context.Context, req model.ChatRequest, hist
 }
 
 func (s *ChatService) handleFlow(ctx context.Context, req model.ChatRequest, history []model.Message) (*model.ChatResponse, error) {
+	log.Printf("[handleFlow] session=%s, history_count=%d", req.SessionID, len(history))
+	for i, msg := range history {
+		log.Printf("[handleFlow] history[%d]: role=%s, content=%s", i, msg.Role, msg.Content)
+	}
 	chatReq := model.ChatRequest{
 		SessionID: req.SessionID,
 		Message:   req.Message,
