@@ -61,7 +61,7 @@ def recognize_intent_with_ai(message: str, history: Optional[List[Message]] = No
     
     # 构建系统提示
     system_prompt = """
-你是一个专业的意图识别助手。请根据用户的消息，识别其意图类型。
+你是一个专业的意图识别助手。请根据用户的消息，识别其意图类型，不说废话，置信度在0-1之间。
 
 意图类型包括：
 1. faq - 常见问题，用户询问关于产品、服务的一般性问题
@@ -203,12 +203,59 @@ def recognize_intent(message: str, history: Optional[List[Message]] = None) -> I
         return result
 
 def generate_reply(message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None) -> str:
-    if intent == "flow":
-        return f"【流程处理】你刚才说的是：{message}"
-    elif intent == "faq":
-        return f"【FAQ回答】你刚才问的是：{message}"
-    else:
-        return f"【默认回复】我收到你的消息：{message}"
+    """根据意图和上下文生成回复"""
+    system_prompt = f""" 
+你是一个智能客服助手，不说废话，直接回答用户问题。 
+当前意图类型: {intent} 
+当前流程ID: {flow_id} 
+
+规则： 
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 faq，请直接回答用户问题 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+    ]
+
+    # 加入历史对话
+    if history:
+        for msg in history:
+            messages.append({"role": msg.role, "content": msg.content})
+
+    # 加入当前用户消息
+    messages.append({"role": "user", "content": message})
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OPENAI_API_KEY}"
+    }
+
+    data = {
+        "model": API_MODEL,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 500
+    }
+
+    try:
+        response = requests.post(
+            f"{OPENAI_BASE_URL}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"API请求失败: {response.status_code}, {response.text}")
+
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        print(f"生成回复失败: {e}")
+        return "抱歉，当前系统繁忙，请稍后再试。"
 
 
 @app.post("/chat", response_model=ChatResponse)
