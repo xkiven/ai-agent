@@ -17,7 +17,7 @@ func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: baseURL,
 		httpCli: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 30 * time.Second,
 		},
 	}
 }
@@ -42,4 +42,48 @@ func (c *Client) Chat(req model.ChatRequest) (*model.ChatResponse, error) {
 		return nil, err
 	}
 	return &cr, nil
+}
+
+func (c *Client) RecognizeIntent(req model.IntentRecognitionRequest) (*model.IntentRecognitionResponse, error) {
+	bs, _ := json.Marshal(req)
+
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/intent/recognize", bytes.NewReader(bs))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var ir model.IntentRecognitionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ir); err != nil {
+		return nil, err
+	}
+	return &ir, nil
+}
+
+func (c *Client) CreateTicket(req model.Ticket) (*model.Ticket, error) {
+	bs, _ := json.Marshal(req)
+
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/ticket/create", bytes.NewReader(bs))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var ticket model.Ticket
+	if err := json.NewDecoder(resp.Body).Decode(&ticket); err != nil {
+		return nil, err
+	}
+	return &ticket, nil
 }

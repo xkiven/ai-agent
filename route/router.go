@@ -8,19 +8,22 @@ import (
 
 func Register(r *gin.Engine, chatSvc *service.ChatService) {
 
-	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// 聊天接口分组
 	chatGroup := r.Group("/chat")
 	{
-		chatGroup.POST("", api.ChatHandler(chatSvc)) // POST /chat
-
+		chatGroup.POST("", api.ChatHandler(chatSvc))
 	}
 
-	// 以后你可以继续加分组
-	// adminGroup := r.Group("/admin")
-	// bizGroup := r.Group("/biz")
+	intentGroup := r.Group("/intent")
+	{
+		intentGroup.POST("/recognize", api.IntentRecognitionHandler(chatSvc))
+	}
+
+	ticketGroup := r.Group("/ticket")
+	{
+		ticketGroup.POST("/create", api.CreateTicketHandler(chatSvc))
+	}
 }
