@@ -43,7 +43,7 @@ func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) 
 	}
 
 	historyForChat := s.getRecentHistory(session, 10)
-	routeResp, err := s.RouteByIntent(ctx, intentResp.Intent, req, historyForChat)
+	routeResp, err := s.RouteByIntent(ctx, intentResp.Intent, req, historyForChat, intentResp.FlowID)
 	if err != nil {
 		return nil, err
 	}
@@ -149,12 +149,12 @@ func (s *ChatService) RecognizeIntent(ctx context.Context, req model.IntentRecog
 	return s.ai.RecognizeIntent(req)
 }
 
-func (s *ChatService) RouteByIntent(ctx context.Context, intent model.IntentType, req model.ChatRequest, history []model.Message) (*model.ChatResponse, error) {
+func (s *ChatService) RouteByIntent(ctx context.Context, intent model.IntentType, req model.ChatRequest, history []model.Message, flowID string) (*model.ChatResponse, error) {
 	switch intent {
 	case model.IntentFAQ:
 		return s.handleFAQ(ctx, req, history)
 	case model.IntentFlow:
-		return s.handleFlow(ctx, req, history)
+		return s.handleFlow(ctx, req, history, flowID)
 	case model.IntentUnknown:
 		return s.handleUnknown(ctx, req)
 	default:
