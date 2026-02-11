@@ -172,12 +172,13 @@ func (s *ChatService) handleFAQ(ctx context.Context, req model.ChatRequest, hist
 		Message:   req.Message,
 		UserID:    req.UserID,
 		History:   history,
+		Intent:    model.IntentFAQ,
 	}
 	return s.ai.Chat(chatReq)
 }
 
-func (s *ChatService) handleFlow(ctx context.Context, req model.ChatRequest, history []model.Message) (*model.ChatResponse, error) {
-	log.Printf("[handleFlow] session=%s, history_count=%d", req.SessionID, len(history))
+func (s *ChatService) handleFlow(ctx context.Context, req model.ChatRequest, history []model.Message, flowID string) (*model.ChatResponse, error) {
+	log.Printf("[handleFlow] session=%s, history_count=%d, flow_id=%s", req.SessionID, len(history), flowID)
 	for i, msg := range history {
 		log.Printf("[handleFlow] history[%d]: role=%s, content=%s", i, msg.Role, msg.Content)
 	}
@@ -186,6 +187,8 @@ func (s *ChatService) handleFlow(ctx context.Context, req model.ChatRequest, his
 		Message:   req.Message,
 		UserID:    req.UserID,
 		History:   history,
+		Intent:    model.IntentFlow,
+		FlowID:    flowID,
 	}
 	return s.ai.Chat(chatReq)
 }
