@@ -1,31 +1,33 @@
 package service
 
 import (
+	"ai-agent/dao"
 	"ai-agent/internal/aiclient"
 	"ai-agent/model"
 	"context"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 type ChatService struct {
-	ai       *aiclient.Client
-	sessions map[string]*model.Session
-	mu       sync.RWMutex
+	ai    *aiclient.Client
+	store *dao.RedisStore
 }
 
-func NewChatService(ai *aiclient.Client) *ChatService {
+func NewChatService(ai *aiclient.Client, store *dao.RedisStore) *ChatService {
 	return &ChatService{
-		ai:       ai,
-		sessions: make(map[string]*model.Session),
+		ai:    ai,
+		store: store,
 	}
 }
 
 func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) (*model.ChatResponse, error) {
-	session := s.getOrCreateSession(req.SessionID, req.UserID)
+	session, err := s.getOrCreateSession(ctx, req.SessionID, req.UserID)
+	if err != nil {
+		return nil, err
+	}
 
 	log.Printf("[Session %s] 当前消息数: %d", req.SessionID, len(session.Messages))
 
@@ -66,6 +68,10 @@ func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) 
 	s.addMessage(session, model.RoleUser, req.Message)
 	s.addMessage(session, model.RoleAssistant, routeResp.Reply)
 
+	if err := s.store.Save(ctx, session); err != nil {
+		log.Printf("[Session %s] 保存失败: %v", req.SessionID, err)
+	}
+
 	resp := &model.ChatResponse{
 		Reply:   routeResp.Reply,
 		Type:    intentResp.Intent,
@@ -75,12 +81,14 @@ func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) 
 	return resp, nil
 }
 
-func (s *ChatService) getOrCreateSession(sessionID, userID string) *model.Session {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *ChatService) getOrCreateSession(ctx context.Context, sessionID, userID string) (*model.Session, error) {
+	session, err := s.store.Get(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
 
-	if session, exists := s.sessions[sessionID]; exists {
-		return session
+	if session != nil {
+		return session, nil
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -92,14 +100,15 @@ func (s *ChatService) getOrCreateSession(sessionID, userID string) *model.Sessio
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	s.sessions[sessionID] = newSession
-	return newSession
+
+	if err := s.store.Save(ctx, newSession); err != nil {
+		return nil, err
+	}
+
+	return newSession, nil
 }
 
 func (s *ChatService) addMessage(session *model.Session, role model.MessageRole, content string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	session.Messages = append(session.Messages, model.Message{
 		Role:    role,
 		Content: content,
@@ -117,12 +126,13 @@ func (s *ChatService) getRecentHistory(session *model.Session, count int) []mode
 	return session.Messages[len(session.Messages)-count:]
 }
 
-func (s *ChatService) GetSessionHistory(sessionID string) (*model.SessionHistoryResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *ChatService) GetSessionHistory(ctx context.Context, sessionID string) (*model.SessionHistoryResponse, error) {
+	session, err := s.store.Get(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
 
-	session, exists := s.sessions[sessionID]
-	if !exists {
+	if session == nil {
 		return &model.SessionHistoryResponse{
 			SessionID: sessionID,
 			Messages:  []model.Message{},
@@ -137,12 +147,8 @@ func (s *ChatService) GetSessionHistory(sessionID string) (*model.SessionHistory
 	}, nil
 }
 
-func (s *ChatService) ClearSession(sessionID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	delete(s.sessions, sessionID)
-	return nil
+func (s *ChatService) ClearSession(ctx context.Context, sessionID string) error {
+	return s.store.Delete(ctx, sessionID)
 }
 
 func (s *ChatService) RecognizeIntent(ctx context.Context, req model.IntentRecognitionRequest) (*model.IntentRecognitionResponse, error) {
@@ -164,24 +170,19 @@ func (s *ChatService) RouteByIntent(ctx context.Context, intent model.IntentType
 
 func (s *ChatService) handleFAQ(ctx context.Context, req model.ChatRequest, history []model.Message) (*model.ChatResponse, error) {
 	log.Printf("[handleFAQ] session=%s, history_count=%d", req.SessionID, len(history))
-	for i, msg := range history {
-		log.Printf("[handleFAQ] history[%d]: role=%s, content=%s", i, msg.Role, msg.Content)
-	}
 	chatReq := model.ChatRequest{
 		SessionID: req.SessionID,
 		Message:   req.Message,
 		UserID:    req.UserID,
 		History:   history,
 		Intent:    model.IntentFAQ,
+		FlowID:    "faq_response",
 	}
 	return s.ai.Chat(chatReq)
 }
 
 func (s *ChatService) handleFlow(ctx context.Context, req model.ChatRequest, history []model.Message, flowID string) (*model.ChatResponse, error) {
 	log.Printf("[handleFlow] session=%s, history_count=%d, flow_id=%s", req.SessionID, len(history), flowID)
-	for i, msg := range history {
-		log.Printf("[handleFlow] history[%d]: role=%s, content=%s", i, msg.Role, msg.Content)
-	}
 	chatReq := model.ChatRequest{
 		SessionID: req.SessionID,
 		Message:   req.Message,
@@ -219,4 +220,8 @@ func (s *ChatService) CreateTicket(ctx context.Context, userID, sessionID, descr
 	}
 
 	return s.ai.CreateTicket(ticket)
+}
+
+func (s *ChatService) Ping(ctx context.Context) error {
+	return s.store.Ping(ctx)
 }
