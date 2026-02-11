@@ -203,9 +203,13 @@ def recognize_intent(message: str, history: Optional[List[Message]] = None) -> I
         return result
 
 def generate_reply(message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None) -> str:
-    """根据意图和上下文生成回复"""
-    # 根据不同的意图类型和流程ID构建不同的系统提示
-    # 调用AI生成回复
+    if intent == "flow":
+        return f"【流程处理】你刚才说的是：{message}"
+    elif intent == "faq":
+        return f"【FAQ回答】你刚才问的是：{message}"
+    else:
+        return f"【默认回复】我收到你的消息：{message}"
+
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
