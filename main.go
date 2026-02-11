@@ -1,6 +1,7 @@
 package main
 
 import (
+	"ai-agent/dao"
 	"ai-agent/internal/aiclient"
 	"ai-agent/route"
 	"ai-agent/service"
