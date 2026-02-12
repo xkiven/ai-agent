@@ -79,6 +79,7 @@ type Session struct {
 	FlowID      string                 `json:"flow_id,omitempty"`
 	CurrentStep string                 `json:"current_step,omitempty"`
 	FlowState   map[string]interface{} `json:"flow_state,omitempty"`
+	Version     int64                  `json:"version"` // 版本号，用于乐观锁
 	CreatedAt   string                 `json:"created_at"`
 	UpdatedAt   string                 `json:"updated_at"`
 }

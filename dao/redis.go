@@ -115,11 +115,12 @@ func (s *RedisStore) SaveWithOptimisticLock(ctx context.Context, session *model.
 
 			// 如果session不存在，直接保存
 			if errors.Is(err, redis.Nil) {
+				// 设置初始版本号为1
+				session.Version = 1
 				data, err := json.Marshal(session)
 				if err != nil {
 					return err
 				}
-				// 直接使用Set命令，避免不必要的TxPipelined
 				return tx.Set(ctx, key, data, s.ttl).Err()
 			}
 
@@ -129,15 +130,16 @@ func (s *RedisStore) SaveWithOptimisticLock(ctx context.Context, session *model.
 				return err
 			}
 
-			// 检查版本冲突：如果当前session的更新时间比我们要保存的session更新，说明有冲突
-			if s.isTimestampNewer(currentSession.UpdatedAt, session.UpdatedAt) {
+			// 版本号检查：如果当前版本号大于等于我们要保存的版本号，说明有冲突
+			if currentSession.Version > session.Version {
 				return ErrSessionConflict
 			}
 
+			// 更新版本号：当前版本号+1
+			session.Version = currentSession.Version + 1
+
 			// 智能合并session数据
 			mergedSession := s.mergeSessions(currentSession, *session)
-			// 强制刷新合并后的更新时间，避免后续冲突
-			mergedSession.UpdatedAt = time.Now().Format(time.RFC3339)
 
 			// 保存合并后的session
 			data, err := json.Marshal(mergedSession)
@@ -220,28 +222,26 @@ func (s *RedisStore) mergeSessions(currentSession, newSession model.Session) mod
 
 // mergeMessages 按时间顺序合并消息，保持对话上下文
 func (s *RedisStore) mergeMessages(currentMessages, newMessages []model.Message) []model.Message {
-	// 使用消息的唯一标识符进行去重，考虑时间戳
+	// 使用版本号后，消息去重逻辑可以简化
+	// 但为了保持消息顺序和上下文，我们仍然使用时间戳排序
+
 	messageMap := make(map[string]model.Message)
 
-	// 处理所有消息，按时间戳合并
+	// 合并所有消息
 	allMessages := append(currentMessages, newMessages...)
 
 	for _, msg := range allMessages {
-		// 使用角色+内容+时间戳生成唯一ID，避免误判重复
 		msgID := s.generateMessageID(msg)
-		// 如果消息不存在，或者存在但时间戳更早，则更新
-		if existingMsg, exists := messageMap[msgID]; !exists || s.isTimestampNewer(msg.Timestamp, existingMsg.Timestamp) {
-			messageMap[msgID] = msg
-		}
+		messageMap[msgID] = msg
 	}
 
-	// 转换为切片并按时间排序
+	// 转换为切片
 	result := make([]model.Message, 0, len(messageMap))
 	for _, msg := range messageMap {
 		result = append(result, msg)
 	}
 
-	// 按时间戳排序，使用安全的比较方法
+	// 按时间戳排序
 	sort.Slice(result, func(i, j int) bool {
 		return s.isTimestampNewer(result[j].Timestamp, result[i].Timestamp)
 	})
@@ -251,10 +251,9 @@ func (s *RedisStore) mergeMessages(currentMessages, newMessages []model.Message)
 
 // generateMessageID 生成消息的唯一ID
 // 使用Role+Content+Timestamp作为ID，避免误判重复
+// 使用Role+Content作为唯一标识符
 func (s *RedisStore) generateMessageID(msg model.Message) string {
-	// 使用Role+Content+Timestamp作为唯一标识符
-	// 确保相同内容但不同时间的消息不被误判为重复
-	return fmt.Sprintf("%s:%s:%s", msg.Role, msg.Content, msg.Timestamp)
+	return fmt.Sprintf("%s:%s", msg.Role, msg.Content)
 }
 
 // isTimestampNewer 安全比较时间戳，返回timestampA是否比timestampB更新

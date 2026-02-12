@@ -363,13 +363,14 @@ func (s *ChatService) getOrCreateSession(ctx context.Context, sessionID, userID 
 		return session, nil
 	}
 
-	now := time.Now().Format(time.RFC3339)
+	now := time.Now().Format(time.RFC3339Nano)
 	newSession := &model.Session{
 		ID:        sessionID,
 		UserID:    userID,
 		State:     model.SessionNew,
 		Messages:  []model.Message{},
 		FlowState: make(map[string]interface{}),
+		Version:   1,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
