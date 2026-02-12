@@ -2,13 +2,10 @@ package flows
 
 import (
 	"ai-agent/model"
-	"ai-agent/service"
+	"ai-agent/utils"
 	"context"
 	"fmt"
 )
-
-// ==================== Flow 处理器实现 ====================
-// 每个Flow处理器都遵循统一的签名：func(ctx, session, userMessage) (reply, done, nextStep, err)
 
 // ==================== 退货流程处理器 ====================
 
@@ -43,7 +40,7 @@ func HandleReturnGoodsAskReason(ctx context.Context, session *model.Session, use
 // 确认退货信息
 func HandleReturnGoodsConfirm(ctx context.Context, session *model.Session, userMessage string) (string, bool, string, error) {
 	// 检查用户是否确认
-	userMessage = service.NormalizeConfirm(userMessage)
+	userMessage = utils.NormalizeConfirm(userMessage)
 
 	if userMessage == "confirm" || userMessage == "yes" || userMessage == "y" {
 		// 检查必要信息

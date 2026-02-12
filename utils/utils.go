@@ -1,4 +1,4 @@
-package service
+package utils
 
 // 规范化用户确认输入
 func NormalizeConfirm(input string) string {
