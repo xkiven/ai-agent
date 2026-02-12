@@ -6,6 +6,7 @@ import (
 	"ai-agent/route"
 	"ai-agent/service"
 	"github.com/gin-gonic/gin"
+	"time"
 )
 
 func main() {
@@ -13,7 +14,7 @@ func main() {
 
 	aiClient := aiclient.NewClient("http://127.0.0.1:8000")
 	// 初始化 service
-	store := dao.NewRedisStore("localhost:6379", "", 0, 24)
+	store := dao.NewRedisStore("localhost:6379", "", 0, 24*time.Hour)
 	chatSvc := service.NewChatService(aiClient, store)
 
 	// 注册路由
