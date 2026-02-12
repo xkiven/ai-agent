@@ -64,8 +64,9 @@ type IntentRecognitionResponse struct {
 }
 
 type Message struct {
-	Role    MessageRole `json:"role"`
-	Content string      `json:"content"`
+	Role      MessageRole `json:"role"`
+	Content   string      `json:"content"`
+	Timestamp string      `json:"timestamp,omitempty"`
 }
 
 type Session struct {

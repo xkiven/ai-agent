@@ -110,8 +110,9 @@ func (s *ChatService) getOrCreateSession(ctx context.Context, sessionID, userID 
 
 func (s *ChatService) addMessage(session *model.Session, role model.MessageRole, content string) {
 	session.Messages = append(session.Messages, model.Message{
-		Role:    role,
-		Content: content,
+		Role:      role,
+		Content:   content,
+		Timestamp: time.Now().Format(time.RFC3339),
 	})
 
 	if len(session.Messages) > 100 {
