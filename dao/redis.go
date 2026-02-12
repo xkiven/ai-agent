@@ -26,7 +26,7 @@ type RedisStore struct {
 	ttl       time.Duration
 }
 
-func NewRedisStore(addr, password string, db int) *RedisStore {
+func NewRedisStore(addr, password string, db int, ttl time.Duration) *RedisStore {
 	client := redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: password,
@@ -36,7 +36,7 @@ func NewRedisStore(addr, password string, db int) *RedisStore {
 	return &RedisStore{
 		client:    client,
 		keyPrefix: "ai-agent:session:",
-		ttl:       24 * time.Hour,
+		ttl:       ttl,
 	}
 }
 
@@ -74,6 +74,22 @@ func (s *RedisStore) Save(ctx context.Context, session *model.Session) error {
 	}
 
 	return s.client.Set(ctx, key, data, s.ttl).Err()
+}
+
+func (s *RedisStore) UpdateFlowState(ctx context.Context, sessionID string, step string, state map[string]interface{}) error {
+	session, err := s.Get(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	session.CurrentStep = step
+	session.FlowState = state
+	session.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	return s.SaveWithOptimisticLock(ctx, session, 3)
 }
 
 // SaveWithOptimisticLock 使用乐观锁保存session，防止并发覆盖写

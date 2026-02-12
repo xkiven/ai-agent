@@ -44,9 +44,11 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
-	Reply   string       `json:"reply"`
-	Type    IntentType   `json:"type"`
-	Session SessionState `json:"session_state,omitempty"`
+	Reply     string       `json:"reply"`
+	Type      IntentType   `json:"type"`
+	Session   SessionState `json:"session_state,omitempty"`
+	SessionID string       `json:"session_id,omitempty"`
+	FlowStep  string       `json:"flow_step,omitempty"`
 }
 
 type IntentRecognitionRequest struct {
@@ -70,13 +72,15 @@ type Message struct {
 }
 
 type Session struct {
-	ID        string       `json:"id"`
-	UserID    string       `json:"user_id"`
-	State     SessionState `json:"state"`
-	Messages  []Message    `json:"messages"`
-	FlowID    string       `json:"flow_id,omitempty"`
-	CreatedAt string       `json:"created_at"`
-	UpdatedAt string       `json:"updated_at"`
+	ID          string                 `json:"id"`
+	UserID      string                 `json:"user_id"`
+	State       SessionState           `json:"state"`
+	Messages    []Message              `json:"messages"`
+	FlowID      string                 `json:"flow_id,omitempty"`
+	CurrentStep string                 `json:"current_step,omitempty"`
+	FlowState   map[string]interface{} `json:"flow_state,omitempty"`
+	CreatedAt   string                 `json:"created_at"`
+	UpdatedAt   string                 `json:"updated_at"`
 }
 
 type SessionHistoryResponse struct {
