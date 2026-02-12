@@ -13,7 +13,7 @@ func main() {
 
 	aiClient := aiclient.NewClient("http://127.0.0.1:8000")
 	// 初始化 service
-	store := dao.NewRedisStore("localhost:6379", "", 0)
+	store := dao.NewRedisStore("localhost:6379", "", 0, 24)
 	chatSvc := service.NewChatService(aiClient, store)
 
 	// 注册路由
