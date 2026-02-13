@@ -21,10 +21,13 @@ type ChatService struct {
 
 // NewChatService 创建ChatService实例
 func NewChatService(ai *aiclient.Client, store *dao.RedisStore) *ChatService {
-	return &ChatService{
+	svc := &ChatService{
 		ai:    ai,
 		store: store,
 	}
+	// 初始化决策层
+	svc.decisionLayer = NewDecisionLayer(ai)
+	return svc
 }
 
 // HandleMessage 处理用户消息的主入口方法
@@ -48,8 +51,9 @@ func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) 
 		req.SessionID, session.State, session.FlowID, session.CurrentStep, len(session.Messages), session.Version)
 
 	// 判断处理流程：Flow模式 or 正常模式
-	decision, err := s.decisionLayer.Decide(req, session)
+	decision, err := s.decisionLayer.Decide(ctx, req, session)
 	if err != nil {
+		log.Printf("[Session %s] 决策失败: %v", req.SessionID, err)
 		return nil, err
 	}
 

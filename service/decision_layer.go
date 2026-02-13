@@ -3,6 +3,7 @@ package service
 import (
 	"ai-agent/internal/aiclient"
 	"ai-agent/model"
+	"context"
 	"log"
 )
 
@@ -18,7 +19,7 @@ func NewDecisionLayer(aiClient *aiclient.Client) *DecisionLayer {
 }
 
 // Decide 核心决策方法
-func (d *DecisionLayer) Decide(req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
+func (d *DecisionLayer) Decide(ctx context.Context, req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
 	log.Printf("[DecisionLayer] session=%s, state=%s, current_step=%s",
 		session.ID, session.State, session.CurrentStep)
 
