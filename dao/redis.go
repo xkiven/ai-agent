@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"time"
 
@@ -132,6 +133,7 @@ func (s *RedisStore) SaveWithOptimisticLock(ctx context.Context, session *model.
 
 			// 版本号检查：如果当前版本号大于等于我们要保存的版本号，说明有冲突
 			if currentSession.Version > session.Version {
+				log.Printf("[Redis] 版本冲突！currentVersion=%d, sessionVersion=%d", currentSession.Version, session.Version)
 				return ErrSessionConflict
 			}
 
@@ -252,7 +254,15 @@ func (s *RedisStore) mergeMessages(currentMessages, newMessages []model.Message)
 
 	// 按时间戳排序
 	sort.Slice(result, func(i, j int) bool {
-		return s.isTimestampNewer(result[j].Timestamp, result[i].Timestamp)
+		ti, err1 := time.Parse(time.RFC3339Nano, result[i].Timestamp)
+		tj, err2 := time.Parse(time.RFC3339Nano, result[j].Timestamp)
+		if result[i].Timestamp == result[j].Timestamp {
+			return result[i].Role == model.RoleUser
+		}
+		if err1 == nil && err2 == nil {
+			return ti.Before(tj) // 早的在前
+		}
+		return result[i].Timestamp > result[j].Timestamp
 	})
 
 	return result
@@ -262,23 +272,7 @@ func (s *RedisStore) mergeMessages(currentMessages, newMessages []model.Message)
 // 使用Role+Content+Timestamp作为ID，避免误判重复
 // 使用Role+Content作为唯一标识符
 func (s *RedisStore) generateMessageID(msg model.Message) string {
-	return fmt.Sprintf("%s:%s", msg.Role, msg.Content)
-}
-
-// isTimestampNewer 安全比较时间戳，返回timestampA是否比timestampB更新
-func (s *RedisStore) isTimestampNewer(timestampA, timestampB string) bool {
-	// 尝试解析为RFC3339格式
-	timeA, errA := time.Parse(time.RFC3339, timestampA)
-	timeB, errB := time.Parse(time.RFC3339, timestampB)
-
-	// 如果都能解析，直接比较时间
-	if errA == nil && errB == nil {
-		return timeA.After(timeB)
-	}
-
-	// 如果有一个解析失败，回退到字符串比较
-	// 这比panic要好，但可能不准确
-	return timestampA > timestampB
+	return fmt.Sprintf("%s:%s:%s", msg.Role, msg.Content, msg.Timestamp)
 }
 
 // isStateMoreAdvanced 检查状态stateA是否比stateB更"高级"
