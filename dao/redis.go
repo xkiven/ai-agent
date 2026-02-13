@@ -216,6 +216,15 @@ func (s *RedisStore) mergeSessions(currentSession, newSession model.Session) mod
 	if newSession.FlowID != "" {
 		merged.FlowID = newSession.FlowID
 	}
+	// 4. CurrentStep 合并
+	if newSession.CurrentStep != "" {
+		merged.CurrentStep = newSession.CurrentStep
+	}
+
+	// 5. FlowState 合并
+	if newSession.FlowState != nil {
+		merged.FlowState = newSession.FlowState
+	}
 
 	return merged
 }

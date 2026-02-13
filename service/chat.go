@@ -74,6 +74,14 @@ func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) 
 		// 走 FAQ / RAG
 		resp, err := s.handleFAQ(ctx, req, s.getRecentHistory(session, 10))
 		// 记录消息 + 存 session
+		s.addMessage(session, model.RoleUser, req.Message)
+		s.addMessage(session, model.RoleAssistant, resp.Reply)
+		session.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+
+		if err := s.store.SaveWithOptimisticLock(ctx, session, 3); err != nil {
+			log.Printf("[Session %s] FAQ保存失败: %v", session.ID, err)
+		}
+
 		return resp, err
 
 	case model.DecisionTicket:
