@@ -51,20 +51,26 @@ def _recognize_intent_with_ai(chat_service: ChatService, message: str, history: 
     
     # 构建系统提示
     system_prompt = """
-你是一个专业的意图识别助手。请根据用户的消息，识别其意图类型，不说废话，置信度在0-1之间。
+你是一个专业的意图识别助手。请根据用户消息识别意图。
 
-意图类型包括：
-1. faq - 常见问题，用户询问关于产品、服务的一般性问题
-2. flow - 流程相关，用户需要执行某个具体流程或操作步骤
-3. unknown - 未知意图，无法明确分类的问题
+意图类型：
+- faq
+- flow
+- unknown
 
-请以JSON格式返回识别结果，格式如下：
+如果 intent == flow，则 flow_id 只能从下面列表中选择：
+- return_goods   （退货流程）
+- order_query    （订单查询）
+- customer_service （客服流程）
+
+严禁输出其他 flow_id（如 return_process, refund_flow 等）。
+
+请严格以 JSON 格式返回：
 {
-    "intent": "意图类型(faq/flow/unknown)",
-    "confidence": 置信度(0-1之间的浮点数),
-    "reply": "针对该意图的简单回复",
-    "flow_id": "如果是flow类型，提供流程ID(可选)",
-    "suggestions": ["如果是flow类型，提供步骤建议(可选)"]
+    "intent": "faq/flow/unknown",
+    "confidence": 0-1,
+    "reply": "简短说明",
+    "flow_id": "return_goods / order_query / customer_service 或 null"
 }
 
 注意：
@@ -146,7 +152,7 @@ def _recognize_intent_fallback(message: str) -> IntentRecognitionResponse:
         return IntentRecognitionResponse(
             intent="flow",
             confidence=0.9,
-            flow_id="refund_flow",
+            flow_id="return_goods",
             reply="退货流程已识别，后续将接入AI处理具体步骤"
         )
     
@@ -155,7 +161,7 @@ def _recognize_intent_fallback(message: str) -> IntentRecognitionResponse:
         return IntentRecognitionResponse(
             intent="flow",
             confidence=0.9,
-            flow_id="register_flow",
+            flow_id="return_goods",
             reply="注册流程已识别，后续将接入AI处理具体步骤"
         )
     
