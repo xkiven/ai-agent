@@ -87,3 +87,25 @@ func (c *Client) CreateTicket(req model.Ticket) (*model.Ticket, error) {
 	}
 	return &ticket, nil
 }
+
+func (c *Client) CheckFlowInterrupt(req model.InterruptCheckRequest) (*model.InterruptCheckResponse, error) {
+	bs, _ := json.Marshal(req)
+
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/flow/interrupt-check", bytes.NewReader(bs))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var ir model.InterruptCheckResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ir); err != nil {
+		return nil, err
+	}
+	return &ir, nil
+}

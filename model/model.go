@@ -34,6 +34,37 @@ const (
 	RoleSystem    MessageRole = "system"
 )
 
+type DecisionType string
+
+const (
+	DecisionContinueFlow DecisionType = "continue_flow"
+	DecisionNewIntent    DecisionType = "new_intent"
+	DecisionRAG          DecisionType = "rag"
+	DecisionTicket       DecisionType = "ticket"
+)
+
+type InterruptCheckRequest struct {
+	SessionID   string                 `json:"session_id"`
+	FlowID      string                 `json:"flow_id"`
+	CurrentStep string                 `json:"current_step"`
+	UserMessage string                 `json:"user_message"`
+	FlowState   map[string]interface{} `json:"flow_state,omitempty"`
+}
+
+type InterruptCheckResponse struct {
+	ShouldInterrupt bool    `json:"should_interrupt"`
+	NewIntent       string  `json:"new_intent,omitempty"`
+	Confidence      float64 `json:"confidence"`
+	Reason          string  `json:"reason,omitempty"`
+}
+
+type DecisionResult struct {
+	Type       DecisionType `json:"type"`
+	FlowID     string       `json:"flow_id,omitempty"`
+	Reply      string       `json:"reply,omitempty"`
+	Confidence float64      `json:"confidence"`
+}
+
 type ChatRequest struct {
 	SessionID string     `json:"session_id"`
 	Message   string     `json:"message"`

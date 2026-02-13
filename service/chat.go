@@ -5,6 +5,7 @@ import (
 	"ai-agent/internal/aiclient"
 	"ai-agent/model"
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -13,8 +14,9 @@ import (
 
 // ChatService 聊天服务结构体
 type ChatService struct {
-	ai    *aiclient.Client
-	store *dao.RedisStore
+	ai            *aiclient.Client
+	store         *dao.RedisStore
+	decisionLayer *DecisionLayer
 }
 
 // NewChatService 创建ChatService实例
@@ -46,99 +48,36 @@ func (s *ChatService) HandleMessage(ctx context.Context, req model.ChatRequest) 
 		req.SessionID, session.State, session.FlowID, session.CurrentStep, len(session.Messages), session.Version)
 
 	// 判断处理流程：Flow模式 or 正常模式
-	if session.State == model.SessionOnFlow && session.FlowID != "" {
+	decision, err := s.decisionLayer.Decide(req, session)
+	if err != nil {
+		return nil, err
+	}
+
+	// 根据决策执行
+	switch decision.Type {
+
+	case model.DecisionContinueFlow:
 		return s.handleFlowStateMachine(ctx, req, session)
-	}
 
-	return s.handleNormalFlow(ctx, req, session)
-}
-
-// handleNormalFlow 正常（非Flow）流程处理
-// 核心逻辑：识别用户意图，根据意图路由到不同处理器
-func (s *ChatService) handleNormalFlow(ctx context.Context, req model.ChatRequest, session *model.Session) (*model.ChatResponse, error) {
-	// 构造意图识别请求
-	intentReq := model.IntentRecognitionRequest{
-		Message:   req.Message,
-		SessionID: req.SessionID,
-		History:   s.getRecentHistory(session, 10),
-	}
-
-	log.Printf("[Session %s] 发送意图识别请求，消息: %s, 历史消息数: %d",
-		req.SessionID, req.Message, len(intentReq.History))
-
-	// 调用AI进行意图识别
-	intentResp, err := s.ai.RecognizeIntent(intentReq)
-	if err != nil {
-		log.Printf("[Session %s] 意图识别失败: %v", req.SessionID, err)
-		return nil, err
-	}
-
-	log.Printf("[Session %s] 识别到意图: %s (置信度: %.2f)", req.SessionID, intentResp.Intent, intentResp.Confidence)
-
-	// 获取用于聊天对话的历史记录
-	historyForChat := s.getRecentHistory(session, 10)
-
-	// 根据意图路由到不同的处理器
-	routeResp, err := s.RouteByIntent(ctx, intentResp.Intent, req, historyForChat, intentResp.FlowID)
-	if err != nil {
-		log.Printf("[Session %s] 路由失败: %v", req.SessionID, err)
-		return nil, err
-	}
-
-	// 截取回复内容用于日志（避免日志过长）
-	replyPreview := routeResp.Reply
-	if len(replyPreview) > 100 {
-		replyPreview = replyPreview[:100] + "..."
-	}
-	log.Printf("[Session %s] 路由响应: %s", req.SessionID, replyPreview)
-
-	// 更新会话状态
-	switch intentResp.Intent {
-	case model.IntentFlow:
+	case model.DecisionNewIntent:
+		// 启动新 Flow
 		session.State = model.SessionOnFlow
-		session.FlowID = intentResp.FlowID
+		session.FlowID = decision.FlowID
 		session.CurrentStep = "start"
-		if session.FlowState == nil {
-			session.FlowState = make(map[string]interface{})
-		}
-		log.Printf("[Session %s] 进入Flow模式: %s", req.SessionID, session.FlowID)
+		return s.handleFlowStateMachine(ctx, req, session)
 
-	case model.IntentFAQ:
-		session.State = model.SessionActive
-		session.FlowID = ""
-		session.CurrentStep = ""
+	case model.DecisionRAG:
+		// 走 FAQ / RAG
+		resp, err := s.handleFAQ(ctx, req, s.getRecentHistory(session, 10))
+		// 记录消息 + 存 session
+		return resp, err
 
-	case model.IntentUnknown:
-		session.State = model.SessionNew
-		session.FlowID = ""
-		session.CurrentStep = ""
-
-	default:
-		session.State = model.SessionActive
-		session.FlowID = ""
-		session.CurrentStep = ""
+	case model.DecisionTicket:
+		// 创建工单 + 返回提示
+		return s.handleUnknown(ctx, req)
 	}
 
-	// 更新时间戳并添加消息
-	session.UpdatedAt = time.Now().Format(time.RFC3339Nano)
-	s.addMessage(session, model.RoleUser, req.Message)
-	s.addMessage(session, model.RoleAssistant, routeResp.Reply)
-
-	// 使用乐观锁保存会话
-	if err := s.store.SaveWithOptimisticLock(ctx, session, 3); err != nil {
-		log.Printf("[Session %s] 保存失败: %v", session.ID, err)
-		return nil, err
-	}
-
-	log.Printf("[Session %s] 处理完成，消息数: %d, 状态: %s", session.ID, len(session.Messages), session.State)
-
-	return &model.ChatResponse{
-		Reply:     routeResp.Reply,
-		Type:      intentResp.Intent,
-		Session:   session.State,
-		SessionID: session.ID,
-		FlowStep:  session.CurrentStep,
-	}, nil
+	return nil, errors.New("unknown decision")
 }
 
 // getOrCreateSession 获取或创建会话
@@ -231,20 +170,6 @@ func (s *ChatService) ClearSession(ctx context.Context, sessionID string) error 
 // RecognizeIntent 识别用户意图
 func (s *ChatService) RecognizeIntent(ctx context.Context, req model.IntentRecognitionRequest) (*model.IntentRecognitionResponse, error) {
 	return s.ai.RecognizeIntent(req)
-}
-
-// RouteByIntent 根据意图路由到不同的处理器
-func (s *ChatService) RouteByIntent(ctx context.Context, intent model.IntentType, req model.ChatRequest, history []model.Message, flowID string) (*model.ChatResponse, error) {
-	switch intent {
-	case model.IntentFAQ:
-		return s.handleFAQ(ctx, req, history)
-	case model.IntentFlow:
-		return s.handleFlow(ctx, req, history, flowID)
-	case model.IntentUnknown:
-		return s.handleUnknown(ctx, req)
-	default:
-		return s.handleUnknown(ctx, req)
-	}
 }
 
 // handleFAQ 处理FAQ类型的问题
