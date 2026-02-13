@@ -74,7 +74,7 @@ func SessionHistoryHandler(chatSvc *service.ChatService) gin.HandlerFunc {
 			return
 		}
 
-		history, err := chatSvc.GetSessionHistory(sessionID)
+		history, err := chatSvc.GetSessionHistory(c.Request.Context(), sessionID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -92,7 +92,7 @@ func ClearSessionHandler(chatSvc *service.ChatService) gin.HandlerFunc {
 			return
 		}
 
-		if err := chatSvc.ClearSession(sessionID); err != nil {
+		if err := chatSvc.ClearSession(c.Request.Context(), sessionID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

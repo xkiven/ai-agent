@@ -34,6 +34,37 @@ const (
 	RoleSystem    MessageRole = "system"
 )
 
+type DecisionType string
+
+const (
+	DecisionContinueFlow DecisionType = "continue_flow"
+	DecisionNewIntent    DecisionType = "new_intent"
+	DecisionRAG          DecisionType = "rag"
+	DecisionTicket       DecisionType = "ticket"
+)
+
+type InterruptCheckRequest struct {
+	SessionID   string                 `json:"session_id"`
+	FlowID      string                 `json:"flow_id"`
+	CurrentStep string                 `json:"current_step"`
+	UserMessage string                 `json:"user_message"`
+	FlowState   map[string]interface{} `json:"flow_state,omitempty"`
+}
+
+type InterruptCheckResponse struct {
+	ShouldInterrupt bool    `json:"should_interrupt"`
+	NewIntent       string  `json:"new_intent,omitempty"`
+	Confidence      float64 `json:"confidence"`
+	Reason          string  `json:"reason,omitempty"`
+}
+
+type DecisionResult struct {
+	Type       DecisionType `json:"type"`
+	FlowID     string       `json:"flow_id,omitempty"`
+	Reply      string       `json:"reply,omitempty"`
+	Confidence float64      `json:"confidence"`
+}
+
 type ChatRequest struct {
 	SessionID string     `json:"session_id"`
 	Message   string     `json:"message"`
@@ -44,9 +75,11 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
-	Reply   string       `json:"reply"`
-	Type    IntentType   `json:"type"`
-	Session SessionState `json:"session_state,omitempty"`
+	Reply     string       `json:"reply"`
+	Type      IntentType   `json:"type"`
+	Session   SessionState `json:"session_state,omitempty"`
+	SessionID string       `json:"session_id,omitempty"`
+	FlowStep  string       `json:"flow_step,omitempty"`
 }
 
 type IntentRecognitionRequest struct {
@@ -64,18 +97,22 @@ type IntentRecognitionResponse struct {
 }
 
 type Message struct {
-	Role    MessageRole `json:"role"`
-	Content string      `json:"content"`
+	Role      MessageRole `json:"role"`
+	Content   string      `json:"content"`
+	Timestamp string      `json:"timestamp,omitempty"`
 }
 
 type Session struct {
-	ID        string       `json:"id"`
-	UserID    string       `json:"user_id"`
-	State     SessionState `json:"state"`
-	Messages  []Message    `json:"messages"`
-	FlowID    string       `json:"flow_id,omitempty"`
-	CreatedAt string       `json:"created_at"`
-	UpdatedAt string       `json:"updated_at"`
+	ID          string                 `json:"id"`
+	UserID      string                 `json:"user_id"`
+	State       SessionState           `json:"state"`
+	Messages    []Message              `json:"messages"`
+	FlowID      string                 `json:"flow_id,omitempty"`
+	CurrentStep string                 `json:"current_step,omitempty"`
+	FlowState   map[string]interface{} `json:"flow_state,omitempty"`
+	Version     int64                  `json:"version"` // 版本号，用于乐观锁
+	CreatedAt   string                 `json:"created_at"`
+	UpdatedAt   string                 `json:"updated_at"`
 }
 
 type SessionHistoryResponse struct {
