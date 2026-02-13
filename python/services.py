@@ -6,7 +6,7 @@ import json
 import os
 import requests
 from typing import List, Optional
-from models import Message, IntentRecognitionResponse
+from models import Message, IntentRecognitionResponse, InterruptCheckRequest, InterruptCheckResponse
 
 
 # 配置
