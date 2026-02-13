@@ -56,7 +56,7 @@ def create_ticket_endpoint(ticket: Ticket):
     return ticket
 
 
-@router.post("/flow/interrupt/check", response_model=InterruptCheckResponse)
+@router.post("/flow/interrupt-check", response_model=InterruptCheckResponse)
 def check_flow_interrupt_endpoint(request: InterruptCheckRequest):
     """检查是否应该打断当前Flow"""
     return chat_service.check_flow_interrupt(request)
