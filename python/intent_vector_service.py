@@ -23,7 +23,7 @@ class IntentVectorService:
         embedding_service: EmbeddingService,
         milvus_host: str = "localhost",
         milvus_port: int = 19530,
-        config_path: str = "config/intents.yaml"
+        config_path: str = "../config/intents.yaml"
     ):
         self.embedding_service = embedding_service
         self.milvus_host = milvus_host

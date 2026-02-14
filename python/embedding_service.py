@@ -4,7 +4,6 @@ DashScope Embedding 服务
 
 from typing import List, Optional
 import dashscope
-from dashscope import Embedding
 
 
 class EmbeddingService:
@@ -13,14 +12,14 @@ class EmbeddingService:
     def __init__(self, api_key: str, model: str = "text-embedding-v3"):
         self.api_key = api_key
         self.model = model
-        Embedding.api_key = api_key
+        dashscope.api_key = api_key
 
     def encode(self, texts: List[str]) -> List[List[float]]:
         """批量向量化"""
         if not texts:
             return []
 
-        response = Embedding.call(
+        response = dashscope.embeddings.TextEmbedding.call(
             model=self.model,
             input=texts
         )
