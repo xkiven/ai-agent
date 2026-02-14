@@ -19,6 +19,7 @@ func Register(r *gin.Engine, chatSvc *service.ChatService) {
 	intentGroup := r.Group("/intent")
 	{
 		intentGroup.POST("/recognize", api.IntentRecognitionHandler(chatSvc))
+		intentGroup.POST("/classify", api.TypeClassifyHandler(chatSvc))
 	}
 
 	ticketGroup := r.Group("/ticket")
