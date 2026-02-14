@@ -3,25 +3,19 @@
 """
 
 import json
-import os
 import requests
 from typing import List, Optional
 from models import Message, IntentRecognitionResponse, InterruptCheckRequest, InterruptCheckResponse
-
-
-# 配置
-OPENAI_API_KEY = "sk-c3c62b663de04038b76d2f444efbc979"
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-API_MODEL = os.getenv("API_MODEL", "qwen-plus")
+from config import config
 
 
 class ChatService:
     
     def __init__(self):
         """初始化聊天服务"""
-        self.openai_api_key = "sk-c3c62b663de04038b76d2f444efbc979"
-        self.openai_base_url = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-        self.api_model = os.getenv("API_MODEL", "qwen-plus")
+        self.openai_api_key = config.llm.api_key
+        self.openai_base_url = config.llm.base_url
+        self.api_model = config.llm.model
     
     def recognize_intent_with_ai(self, message: str, history: Optional[List[Message]] = None) -> IntentRecognitionResponse:
         """使用OpenAI API进行意图识别"""
@@ -111,7 +105,7 @@ def _recognize_intent_with_ai(chat_service: ChatService, message: str, history: 
             f"{chat_service.openai_base_url}/chat/completions",
             headers=headers,
             json=data,
-            timeout=30
+            timeout=config.llm.timeout
         )
         
         if response.status_code != 200:
@@ -240,7 +234,7 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
             f"{chat_service.openai_base_url}/chat/completions",
             headers=headers,
             json=data,
-            timeout=30
+            timeout=config.llm.timeout
         )
 
         if response.status_code != 200:
@@ -307,7 +301,7 @@ def _check_flow_interrupt(chat_service: ChatService, request: InterruptCheckRequ
             f"{chat_service.openai_base_url}/chat/completions",
             headers=headers,
             json=data,
-            timeout=30
+            timeout=config.llm.timeout
         )
         
         if response.status_code != 200:
