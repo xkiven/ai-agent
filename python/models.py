@@ -3,7 +3,7 @@
 """
 
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional,Dict, Any
 
 
 class Message(BaseModel):
@@ -56,3 +56,20 @@ class Ticket(BaseModel):
     status: str
     created_at: str
     updated_at: str
+
+
+class InterruptCheckRequest(BaseModel):
+    """Flow中断检查请求模型"""
+    session_id: str
+    flow_id: str
+    current_step: Optional[str] = None
+    user_message: str
+    flow_state: Optional[Dict[str, Any]] = None
+
+
+class InterruptCheckResponse(BaseModel):
+    """Flow中断检查响应模型"""
+    should_interrupt: bool
+    confidence: float
+    new_intent: Optional[str] = None
+    reason: Optional[str] = None

@@ -6,7 +6,7 @@ import json
 import os
 import requests
 from typing import List, Optional
-from models import Message, IntentRecognitionResponse
+from models import Message, IntentRecognitionResponse, InterruptCheckRequest, InterruptCheckResponse
 
 
 # 配置
@@ -16,7 +16,6 @@ API_MODEL = os.getenv("API_MODEL", "qwen-plus")
 
 
 class ChatService:
-    """聊天服务类 - 接口定义"""
     
     def __init__(self):
         """初始化聊天服务"""
@@ -39,6 +38,10 @@ class ChatService:
     def generate_reply(self, message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None) -> str:
         """根据意图和上下文生成回复"""
         return _generate_reply(self, message, intent, flow_id, history)
+    
+    def check_flow_interrupt(self, request: InterruptCheckRequest) -> InterruptCheckResponse:
+        """检查是否应该打断当前Flow"""
+        return _check_flow_interrupt(self, request)
 
 
 
@@ -48,20 +51,26 @@ def _recognize_intent_with_ai(chat_service: ChatService, message: str, history: 
     
     # 构建系统提示
     system_prompt = """
-你是一个专业的意图识别助手。请根据用户的消息，识别其意图类型，不说废话，置信度在0-1之间。
+你是一个专业的意图识别助手。请根据用户消息识别意图。
 
-意图类型包括：
-1. faq - 常见问题，用户询问关于产品、服务的一般性问题
-2. flow - 流程相关，用户需要执行某个具体流程或操作步骤
-3. unknown - 未知意图，无法明确分类的问题
+意图类型：
+- faq
+- flow
+- unknown
 
-请以JSON格式返回识别结果，格式如下：
+如果 intent == flow，则 flow_id 只能从下面列表中选择：
+- return_goods   （退货流程）
+- order_query    （订单查询）
+- customer_service （客服流程）
+
+严禁输出其他 flow_id（如 return_process, refund_flow 等）。
+
+请严格以 JSON 格式返回：
 {
-    "intent": "意图类型(faq/flow/unknown)",
-    "confidence": 置信度(0-1之间的浮点数),
-    "reply": "针对该意图的简单回复",
-    "flow_id": "如果是flow类型，提供流程ID(可选)",
-    "suggestions": ["如果是flow类型，提供步骤建议(可选)"]
+    "intent": "faq/flow/unknown",
+    "confidence": 0-1,
+    "reply": "简短说明",
+    "flow_id": "return_goods / order_query / customer_service 或 null"
 }
 
 注意：
@@ -143,7 +152,7 @@ def _recognize_intent_fallback(message: str) -> IntentRecognitionResponse:
         return IntentRecognitionResponse(
             intent="flow",
             confidence=0.9,
-            flow_id="refund_flow",
+            flow_id="return_goods",
             reply="退货流程已识别，后续将接入AI处理具体步骤"
         )
     
@@ -152,7 +161,7 @@ def _recognize_intent_fallback(message: str) -> IntentRecognitionResponse:
         return IntentRecognitionResponse(
             intent="flow",
             confidence=0.9,
-            flow_id="register_flow",
+            flow_id="return_goods",
             reply="注册流程已识别，后续将接入AI处理具体步骤"
         )
     
@@ -243,3 +252,88 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
     except Exception as e:
         print(f"生成回复失败: {e}")
         return "抱歉，当前系统繁忙，请稍后再试。"
+
+
+def _check_flow_interrupt(chat_service: ChatService, request: InterruptCheckRequest) -> InterruptCheckResponse:
+    """检查是否应该打断当前Flow - 具体实现"""
+    print(f"Flow中断检查: session={request.session_id}, flow={request.flow_id}, step={request.current_step}")
+    
+    # 构建系统提示
+    system_prompt = f"""
+你是一个Flow中断判断助手。请根据用户在当前流程中的输入，判断是否应该打断当前流程。
+
+当前流程信息：
+- 流程ID: {request.flow_id}
+- 当前步骤: {request.current_step}
+- 流程状态: {request.flow_state}
+
+用户输入: {request.user_message}
+
+判断规则：
+1. 如果用户明确表示要退出、取消、停止当前流程，应该打断
+2. 如果用户询问与当前流程无关的问题，应该打断
+3. 如果用户输入包含明显的错误或误解，应该打断
+4. 如果用户只是继续当前流程的正常操作，不应该打断
+
+请以JSON格式返回判断结果，格式如下：
+{{
+    "should_interrupt": true/false,
+    "confidence": 0-1之间的置信度,
+    "new_intent": "如果打断，建议的新意图类型(可选)",
+    "reason": "判断理由(可选)"
+}}
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"用户输入: {request.user_message}"}
+    ]
+
+    try:
+        # 调用OpenAI API进行中断判断
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {chat_service.openai_api_key}"
+        }
+        
+        data = {
+            "model": chat_service.api_model,
+            "messages": messages,
+            "temperature": 0.1,
+            "max_tokens": 300
+        }
+        
+        response = requests.post(
+            f"{chat_service.openai_base_url}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"API请求失败: {response.status_code}, {response.text}")
+        
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        
+        # 尝试解析JSON响应
+        try:
+            interrupt_data = json.loads(content)
+            return InterruptCheckResponse(**interrupt_data)
+        except json.JSONDecodeError:
+            # 如果JSON解析失败，返回默认响应（不打断）
+            print("Flow中断检查JSON解析失败，默认不打断")
+            return InterruptCheckResponse(
+                should_interrupt=False,
+                confidence=0.5,
+                reason="解析失败，默认继续流程"
+            )
+            
+    except Exception as e:
+        print(f"Flow中断检查错误: {str(e)}")
+        # 出错时默认不打断
+        return InterruptCheckResponse(
+            should_interrupt=False,
+            confidence=0.3,
+            reason=f"检查失败: {str(e)}"
+        )

@@ -5,7 +5,7 @@ API路由处理
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
-from models import ChatRequest, ChatResponse, IntentRecognitionRequest, IntentRecognitionResponse, Ticket
+from models import ChatRequest, ChatResponse, IntentRecognitionRequest, IntentRecognitionResponse, Ticket, InterruptCheckRequest, InterruptCheckResponse
 from services import ChatService
 
 
@@ -54,3 +54,9 @@ def create_ticket_endpoint(ticket: Ticket):
     ticket.intent = "unknown"
     
     return ticket
+
+
+@router.post("/flow/interrupt-check", response_model=InterruptCheckResponse)
+def check_flow_interrupt_endpoint(request: InterruptCheckRequest):
+    """检查是否应该打断当前Flow"""
+    return chat_service.check_flow_interrupt(request)
