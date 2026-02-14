@@ -8,6 +8,22 @@ const (
 	IntentUnknown IntentType = "unknown"
 )
 
+type IntentDefinition struct {
+	ID       string     `yaml:"id"`
+	Name     string     `yaml:"name"`
+	Type     IntentType `yaml:"type"`
+	Enabled  bool       `yaml:"enabled"`
+	Priority int        `yaml:"priority"`
+	Keywords []string   `yaml:"keywords"`
+	Examples []string   `yaml:"examples"`
+	NextFlow string     `yaml:"next_flow,omitempty"`
+}
+
+type IntentConfig struct {
+	Version string             `yaml:"version"`
+	Intents []IntentDefinition `yaml:"intents"`
+}
+
 type SessionState string
 
 const (

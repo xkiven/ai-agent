@@ -8,13 +8,15 @@ import (
 )
 
 type DecisionLayer struct {
-	aiClient *aiclient.Client
+	aiClient     *aiclient.Client
+	typeClassify *TypeClassify
 }
 
 // 创建决策层
-func NewDecisionLayer(aiClient *aiclient.Client) *DecisionLayer {
+func NewDecisionLayer(aiClient *aiclient.Client, intentDefs []model.IntentDefinition) *DecisionLayer {
 	return &DecisionLayer{
-		aiClient: aiClient,
+		aiClient:     aiClient,
+		typeClassify: NewTypeClassify(intentDefs),
 	}
 }
 
@@ -36,7 +38,6 @@ func (d *DecisionLayer) Decide(ctx context.Context, req model.ChatRequest, sessi
 func (d *DecisionLayer) handleOnFlow(ctx context.Context, req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
 	log.Printf("[DecisionLayer] OnFlow, checking interrupt...")
 
-	// 调用 Python 判断是否打断 Flow
 	checkReq := model.InterruptCheckRequest{
 		SessionID:   session.ID,
 		FlowID:      session.FlowID,
@@ -48,7 +49,6 @@ func (d *DecisionLayer) handleOnFlow(ctx context.Context, req model.ChatRequest,
 	resp, err := d.aiClient.CheckFlowInterrupt(checkReq)
 	if err != nil {
 		log.Printf("[DecisionLayer] CheckFlowInterrupt error: %v, 使用本地处理", err)
-		// 如果调用失败，默认继续 Flow
 		return &model.DecisionResult{
 			Type:       model.DecisionContinueFlow,
 			Confidence: 1.0,
@@ -57,12 +57,10 @@ func (d *DecisionLayer) handleOnFlow(ctx context.Context, req model.ChatRequest,
 
 	if resp.ShouldInterrupt {
 		log.Printf("[DecisionLayer] Flow被打断，重新决策 intent=%s", resp.NewIntent)
-		// 打断 Flow，重新走 Intent 决策
 		return d.handleNotOnFlow(ctx, req, session)
 	}
 
 	log.Printf("[DecisionLayer] 继续当前 Flow")
-	// 继续当前 Flow
 	return &model.DecisionResult{
 		Type:       model.DecisionContinueFlow,
 		FlowID:     session.FlowID,
@@ -74,7 +72,6 @@ func (d *DecisionLayer) handleOnFlow(ctx context.Context, req model.ChatRequest,
 func (d *DecisionLayer) handleNotOnFlow(ctx context.Context, req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
 	log.Printf("[DecisionLayer] NotOnFlow, 调用 Python 做 Intent 识别")
 
-	// 调用 Python Intent 识别
 	intentReq := model.IntentRecognitionRequest{
 		SessionID: session.ID,
 		Message:   req.Message,
@@ -90,36 +87,13 @@ func (d *DecisionLayer) handleNotOnFlow(ctx context.Context, req model.ChatReque
 	log.Printf("[DecisionLayer] Intent识别结果: intent=%s, confidence=%.2f",
 		intentResp.Intent, intentResp.Confidence)
 
-	// 根据 Intent 类型决策
-	switch intentResp.Intent {
-	case model.IntentFlow:
-		return &model.DecisionResult{
-			Type:       model.DecisionNewIntent,
-			FlowID:     intentResp.FlowID,
-			Reply:      intentResp.Reply,
-			Confidence: intentResp.Confidence,
-		}, nil
-
-	case model.IntentFAQ:
-		return &model.DecisionResult{
-			Type:       model.DecisionRAG,
-			Reply:      intentResp.Reply,
-			Confidence: intentResp.Confidence,
-		}, nil
-
-	case model.IntentUnknown:
-		return &model.DecisionResult{
-			Type:       model.DecisionTicket,
-			Reply:      intentResp.Reply,
-			Confidence: intentResp.Confidence,
-		}, nil
-
-	default:
-		return &model.DecisionResult{
-			Type:       model.DecisionNewIntent,
-			FlowID:     string(intentResp.Intent),
-			Reply:      intentResp.Reply,
-			Confidence: intentResp.Confidence,
-		}, nil
+	// 使用TypeClassify进行类型路由
+	result := d.typeClassify.Classify(string(intentResp.Intent))
+	result.Confidence = intentResp.Confidence
+	result.Reply = intentResp.Reply
+	if intentResp.FlowID != "" {
+		result.FlowID = intentResp.FlowID
 	}
+
+	return result, nil
 }

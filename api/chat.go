@@ -44,6 +44,26 @@ func IntentRecognitionHandler(chatSvc *service.ChatService) gin.HandlerFunc {
 	}
 }
 
+func TypeClassifyHandler(chatSvc *service.ChatService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			IntentID string `json:"intent_id"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+			return
+		}
+
+		if req.IntentID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "intent_id is required"})
+			return
+		}
+
+		result := chatSvc.TypeClassify(req.IntentID)
+		c.JSON(http.StatusOK, result)
+	}
+}
+
 func CreateTicketHandler(chatSvc *service.ChatService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {

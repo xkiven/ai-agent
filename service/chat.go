@@ -20,13 +20,12 @@ type ChatService struct {
 }
 
 // NewChatService 创建ChatService实例
-func NewChatService(ai *aiclient.Client, store *dao.RedisStore) *ChatService {
+func NewChatService(ai *aiclient.Client, store *dao.RedisStore, intentDefs []model.IntentDefinition) *ChatService {
 	svc := &ChatService{
 		ai:    ai,
 		store: store,
 	}
-	// 初始化决策层
-	svc.decisionLayer = NewDecisionLayer(ai)
+	svc.decisionLayer = NewDecisionLayer(ai, intentDefs)
 	return svc
 }
 
@@ -182,6 +181,11 @@ func (s *ChatService) ClearSession(ctx context.Context, sessionID string) error 
 // RecognizeIntent 识别用户意图
 func (s *ChatService) RecognizeIntent(ctx context.Context, req model.IntentRecognitionRequest) (*model.IntentRecognitionResponse, error) {
 	return s.ai.RecognizeIntent(req)
+}
+
+// TypeClassify 类型分类
+func (s *ChatService) TypeClassify(intentID string) *model.DecisionResult {
+	return s.decisionLayer.typeClassify.Classify(intentID)
 }
 
 // handleFAQ 处理FAQ类型的问题
