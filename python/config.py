@@ -45,9 +45,10 @@ class Config(BaseModel):
 
 def load_config() -> Config:
     """从环境变量加载配置"""
+    llm_key = os.getenv("LLM_API_KEY", "")
     return Config(
         llm=LLMConfig(
-            api_key=os.getenv("LLM_API_KEY", ""),
+            api_key=llm_key,
             base_url=os.getenv("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
             model=os.getenv("LLM_MODEL", "qwen-plus"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
@@ -55,11 +56,11 @@ def load_config() -> Config:
             timeout=int(os.getenv("LLM_TIMEOUT", "30")),
         ),
         embedding=EmbeddingConfig(
-            api_key=os.getenv("EMBEDDING_API_KEY", os.getenv("LLM_API_KEY", "")),
+            api_key=os.getenv("EMBEDDING_API_KEY", llm_key),
             base_url=os.getenv("EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
             model=os.getenv("EMBEDDING_MODEL", "text-embedding-v3"),
             dimension=int(os.getenv("EMBEDDING_DIMENSION", "1024")),
-        ) if os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY") else None,
+        ) if llm_key else None,
         milvus=MilvusConfig(
             host=os.getenv("MILVUS_HOST", "localhost"),
             port=int(os.getenv("MILVUS_PORT", "19530")),

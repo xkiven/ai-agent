@@ -2,9 +2,13 @@
 API路由处理
 """
 
+import os
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+
+os.environ.setdefault("LLM_API_KEY", "sk-c3c62b663de04038b76d2f444efbc979")
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from models import ChatRequest, ChatResponse, IntentRecognitionRequest, IntentRecognitionResponse, Ticket, InterruptCheckRequest, InterruptCheckResponse

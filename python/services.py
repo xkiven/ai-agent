@@ -8,15 +8,22 @@ from typing import List, Optional
 from models import Message, IntentRecognitionResponse, InterruptCheckRequest, InterruptCheckResponse
 from config import config
 from vector_store import get_embedding_service, get_milvus_store
-from intent_vector_service import IntentVectorService
-from embedding_service import EmbeddingService
+
+try:
+    from intent_vector_service import IntentVectorService
+    from embedding_service import EmbeddingService
+    INTENT_VECTOR_AVAILABLE = True
+except ImportError:
+    INTENT_VECTOR_AVAILABLE = False
+    IntentVectorService = None
+    EmbeddingService = None
 
 
 # 全局意图向量服务
-_intent_vector_service: Optional[IntentVectorService] = None
+_intent_vector_service: Optional[object] = None
 
 
-def get_intent_vector_service() -> Optional[IntentVectorService]:
+def get_intent_vector_service():
     """获取意图向量服务"""
     global _intent_vector_service
     return _intent_vector_service
@@ -25,21 +32,24 @@ def get_intent_vector_service() -> Optional[IntentVectorService]:
 def init_intent_vector_service():
     """初始化意图向量服务"""
     global _intent_vector_service
+    if not INTENT_VECTOR_AVAILABLE:
+        print("意图向量模块不可用，跳过初始化")
+        return
+    
     try:
-        if config.embedding and config.milvus:
+        # Chroma需要embedding配置
+        if config.embedding and EmbeddingService and IntentVectorService:
             embedding_service = EmbeddingService(
                 api_key=config.embedding.api_key,
                 model=config.embedding.model
             )
             _intent_vector_service = IntentVectorService(
                 embedding_service=embedding_service,
-                milvus_host=config.milvus.host,
-                milvus_port=config.milvus.port
             )
             _intent_vector_service.initialize()
             print("意图向量服务初始化成功")
         else:
-            print("Embedding或Milvus未配置，跳过意图向量服务")
+            print("Embedding未配置，跳过意图向量服务")
     except Exception as e:
         print(f"初始化意图向量服务失败: {e}")
 

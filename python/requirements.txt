@@ -2,7 +2,8 @@ fastapi
 uvicorn
 pydantic
 requests
-pymilvus>=2.3.0
+faiss-cpu
 dashscope
 pyyaml
+
 
