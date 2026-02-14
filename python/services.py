@@ -7,6 +7,7 @@ import requests
 from typing import List, Optional
 from models import Message, IntentRecognitionResponse, InterruptCheckRequest, InterruptCheckResponse
 from config import config
+from vector_store import get_embedding_service, get_milvus_store
 
 
 class ChatService:
@@ -36,6 +37,14 @@ class ChatService:
     def check_flow_interrupt(self, request: InterruptCheckRequest) -> InterruptCheckResponse:
         """检查是否应该打断当前Flow"""
         return _check_flow_interrupt(self, request)
+
+    def retrieve_context(self, query: str, top_k: int = 3) -> str:
+        """从向量库检索相关上下文"""
+        return _retrieve_context(self, query, top_k)
+
+    def add_knowledge(self, texts: List[str], metadata: Optional[List[dict]] = None):
+        """添加知识到向量库"""
+        return _add_knowledge(self, texts, metadata)
 
 
 
@@ -194,16 +203,37 @@ def _recognize_intent(chat_service: ChatService, message: str, history: Optional
 
 def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None) -> str:
     """根据意图和上下文生成回复 - 具体实现"""
-    system_prompt = f""" 
-你是一个智能客服助手，不说废话，直接回答用户问题。 
-当前意图类型: {intent} 
-当前流程ID: {flow_id} 
+    
+    # RAG: 如果是 faq 意图，先检索相关知识
+    context = ""
+    if intent == "faq" or intent == "unknown":
+        context = _retrieve_context(chat_service, message, top_k=3)
 
-规则： 
-- 如果是 flow，请引导用户继续完成该流程 
-- 如果是 faq，请直接回答用户问题 
-- 如果是 unknown，请礼貌说明并建议转人工 
-"""
+    system_prompt = f""" 
+    你是一个智能客服助手，不说废话，直接回答用户问题。 
+    当前意图类型: {intent} 
+    当前流程ID: {flow_id} 
+    """
+
+    # 添加知识库上下文
+    if context:
+        system_prompt += f"""
+    下面是知识库中与用户问题相关的参考信息：
+    {context}
+
+    规则：
+    - 请优先基于以上知识库信息回答用户问题
+    - 如果知识库中没有相关信息，请如实说明
+    - 如果是 flow，请引导用户继续完成该流程 
+    - 如果是 unknown，请礼貌说明并建议转人工 
+    """
+    else:
+        system_prompt += """
+    规则： 
+    - 如果是 flow，请引导用户继续完成该流程 
+    - 如果是 faq，请直接回答用户问题 
+    - 如果是 unknown，请礼貌说明并建议转人工 
+    """
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -254,29 +284,29 @@ def _check_flow_interrupt(chat_service: ChatService, request: InterruptCheckRequ
     
     # 构建系统提示
     system_prompt = f"""
-你是一个Flow中断判断助手。请根据用户在当前流程中的输入，判断是否应该打断当前流程。
+    你是一个Flow中断判断助手。请根据用户在当前流程中的输入，判断是否应该打断当前流程。
 
-当前流程信息：
-- 流程ID: {request.flow_id}
-- 当前步骤: {request.current_step}
-- 流程状态: {request.flow_state}
+    当前流程信息：
+    - 流程ID: {request.flow_id}
+    - 当前步骤: {request.current_step}
+    - 流程状态: {request.flow_state}
 
-用户输入: {request.user_message}
+    用户输入: {request.user_message}
 
-判断规则：
-1. 如果用户明确表示要退出、取消、停止当前流程，应该打断
-2. 如果用户询问与当前流程无关的问题，应该打断
-3. 如果用户输入包含明显的错误或误解，应该打断
-4. 如果用户只是继续当前流程的正常操作，不应该打断
+    判断规则：
+    1. 如果用户明确表示要退出、取消、停止当前流程，应该打断
+    2. 如果用户询问与当前流程无关的问题，应该打断
+    3. 如果用户输入包含明显的错误或误解，应该打断
+    4. 如果用户只是继续当前流程的正常操作，不应该打断
 
-请以JSON格式返回判断结果，格式如下：
-{{
-    "should_interrupt": true/false,
-    "confidence": 0-1之间的置信度,
-    "new_intent": "如果打断，建议的新意图类型(可选)",
-    "reason": "判断理由(可选)"
-}}
-"""
+    请以JSON格式返回判断结果，格式如下：
+    {{
+        "should_interrupt": true/false,
+        "confidence": 0-1之间的置信度,
+        "new_intent": "如果打断，建议的新意图类型(可选)",
+        "reason": "判断理由(可选)"
+    }}
+    """
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -331,3 +361,58 @@ def _check_flow_interrupt(chat_service: ChatService, request: InterruptCheckRequ
             confidence=0.3,
             reason=f"检查失败: {str(e)}"
         )
+
+
+def _retrieve_context(chat_service: ChatService, query: str, top_k: int = 3) -> str:
+    """从向量库检索相关上下文"""
+    try:
+        # 检查 Milvus 是否配置
+        if not config.milvus or not config.embedding:
+            print("Milvus/Embedding 未配置，跳过 RAG 检索")
+            return ""
+
+        # 获取向量服务
+        embedding_service = get_embedding_service()
+        milvus_store = get_milvus_store()
+
+        # 将查询转换为向量
+        print(f"生成查询向量: {query[:50]}...")
+        query_vector = embedding_service.embed_text(query)
+
+        # 检索相似内容
+        print(f"检索相似内容 top_k={top_k}")
+        results = milvus_store.search(query_vector, top_k=top_k)
+
+        if not results:
+            print("未找到相关内容")
+            return ""
+
+        # 构建上下文
+        context_parts = []
+        for i, result in enumerate(results, 1):
+            text = result["text"]
+            distance = result.get("distance", 0)
+            context_parts.append(f"[{i}] {text} (相似度: {distance:.3f})")
+
+        context = "\n\n".join(context_parts)
+        print(f"检索到 {len(results)} 条相关知识")
+        return context
+
+    except Exception as e:
+        print(f"RAG 检索失败: {str(e)}")
+        return ""
+
+
+def _add_knowledge(chat_service: ChatService, texts: List[str], metadata: Optional[List[dict]] = None):
+    """添加知识到向量库"""
+    try:
+        if not config.milvus or not config.embedding:
+            raise ValueError("Milvus/Embedding 未配置")
+
+        milvus_store = get_milvus_store()
+        milvus_store.add_texts(texts, metadata)
+        print(f"成功添加 {len(texts)} 条知识")
+
+    except Exception as e:
+        print(f"添加知识失败: {str(e)}")
+        raise

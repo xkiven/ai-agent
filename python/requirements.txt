@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pydantic
+requests
+pymilvus>=2.3.0
+dashscope
