@@ -8,6 +8,40 @@ from typing import List, Optional
 from models import Message, IntentRecognitionResponse, InterruptCheckRequest, InterruptCheckResponse
 from config import config
 from vector_store import get_embedding_service, get_milvus_store
+from intent_vector_service import IntentVectorService
+from embedding_service import EmbeddingService
+
+
+# 全局意图向量服务
+_intent_vector_service: Optional[IntentVectorService] = None
+
+
+def get_intent_vector_service() -> Optional[IntentVectorService]:
+    """获取意图向量服务"""
+    global _intent_vector_service
+    return _intent_vector_service
+
+
+def init_intent_vector_service():
+    """初始化意图向量服务"""
+    global _intent_vector_service
+    try:
+        if config.embedding and config.milvus:
+            embedding_service = EmbeddingService(
+                api_key=config.embedding.api_key,
+                model=config.embedding.model
+            )
+            _intent_vector_service = IntentVectorService(
+                embedding_service=embedding_service,
+                milvus_host=config.milvus.host,
+                milvus_port=config.milvus.port
+            )
+            _intent_vector_service.initialize()
+            print("意图向量服务初始化成功")
+        else:
+            print("Embedding或Milvus未配置，跳过意图向量服务")
+    except Exception as e:
+        print(f"初始化意图向量服务失败: {e}")
 
 
 class ChatService:
@@ -27,7 +61,7 @@ class ChatService:
         return _recognize_intent_fallback(message)
     
     def recognize_intent(self, message: str, history: Optional[List[Message]] = None) -> IntentRecognitionResponse:
-        """意图识别主函数，优先使用AI，失败时使用规则"""
+        """意图识别主函数：向量匹配 -> LLM兜底 -> 规则兜底"""
         return _recognize_intent(self, message, history)
     
     def generate_reply(self, message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None) -> str:
@@ -186,19 +220,49 @@ def _recognize_intent_fallback(message: str) -> IntentRecognitionResponse:
 
 
 def _recognize_intent(chat_service: ChatService, message: str, history: Optional[List[Message]] = None) -> IntentRecognitionResponse:
-    """意图识别主函数，优先使用AI，失败时使用规则 - 具体实现"""
+    """意图识别主函数：向量匹配 -> LLM兜底 -> 规则兜底"""
     print(f"开始意图识别: {message}")
+    
+    # 1. 尝试向量匹配
+    vector_result = _recognize_intent_by_vector(message)
+    if vector_result:
+        print(f"向量匹配识别结果: {vector_result}")
+        return vector_result
+    
+    # 2. 向量匹配失败，使用LLM识别
     try:
-        # 尝试使用AI进行意图识别
         result = chat_service.recognize_intent_with_ai(message, history)
-        print(f"AI意图识别结果: {result}")
+        print(f"LLM意图识别结果: {result}")
         return result
     except Exception as e:
-        print(f"AI意图识别失败，使用备用方案: {str(e)}")
-        # AI失败时使用基于规则的备用方案
-        result = chat_service.recognize_intent_fallback(message)
-        print(f"备用规则识别结果: {result}")
-        return result
+        print(f"LLM意图识别失败: {str(e)}")
+    
+    # 3. LLM失败，使用规则兜底
+    result = chat_service.recognize_intent_fallback(message)
+    print(f"规则兜底识别结果: {result}")
+    return result
+
+
+def _recognize_intent_by_vector(message: str) -> Optional[IntentRecognitionResponse]:
+    """使用向量匹配进行意图识别"""
+    try:
+        intent_service = get_intent_vector_service()
+        if not intent_service:
+            return None
+            
+        result = intent_service.find_similar(message, top_k=1, threshold=0.6)
+        if not result:
+            return None
+            
+        return IntentRecognitionResponse(
+            intent=result["type"],
+            confidence=result["confidence"],
+            flow_id=result.get("next_flow"),
+            reply=f"已识别为{result['intent_name']}"
+        )
+    except Exception as e:
+        print(f"向量匹配失败: {e}")
+        return None
 
 
 def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None) -> str:

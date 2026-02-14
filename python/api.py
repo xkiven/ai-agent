@@ -8,10 +8,14 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from models import ChatRequest, ChatResponse, IntentRecognitionRequest, IntentRecognitionResponse, Ticket, InterruptCheckRequest, InterruptCheckResponse
-from services import ChatService
+from services import ChatService, init_intent_vector_service
 
 
 router = APIRouter()
+
+# 初始化意图向量服务
+init_intent_vector_service()
+
 chat_service = ChatService()
 
 

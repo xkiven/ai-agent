@@ -1,0 +1,187 @@
+# 意图定义配置文件
+# version: 意图配置版本
+version: "1.0"
+
+# 意图列表
+intents:
+  # ===== 流程类 =====
+  - id: return_goods
+    name: 退货申请
+    type: flow
+    enabled: true
+    priority: 10
+    keywords:
+      - 退货
+      - 退款
+      - 怎么退
+      - 不想要了
+      - 要退货
+      - 退货流程
+      - 取消订单
+    examples:
+      - 我要退货
+      - 订单号xxx怎么退款
+      - 不想要了能退吗
+      - 怎么取消订单
+    next_flow: return_goods
+
+  - id: order_query
+    name: 订单查询
+    type: flow
+    enabled: true
+    priority: 10
+    keywords:
+      - 订单
+      - 订单号
+      - 查订单
+      - 看看订单
+      - 我的订单
+      - 订单状态
+    examples:
+      - 帮我查一下订单
+      - 我的订单到哪里了
+      - 订单号123456
+    next_flow: order_query
+
+  - id: logistics
+    name: 物流查询
+    type: flow
+    enabled: true
+    priority: 9
+    keywords:
+      - 物流
+      - 快递
+      - 到了吗
+      - 发货没
+      - 到哪里了
+      - 物流信息
+      - 快递到哪
+    examples:
+      - 快递到哪了
+      - 什么时候能到
+      - 发货了吗
+    next_flow: logistics
+
+  - id: exchange
+    name: 换货
+    type: flow
+    enabled: true
+    priority: 8
+    keywords:
+      - 换货
+      - 换一个
+      - 换款式
+      - 换颜色
+      - 换大小
+      - 换尺寸
+    examples:
+      - 我想换个颜色
+      - 能换一个吗
+      - 换个尺码
+    next_flow: exchange
+
+  # ===== FAQ类 =====
+  - id: faq_shipping
+    name: 发货问题
+    type: faq
+    enabled: true
+    priority: 5
+    keywords:
+      - 发货
+      - 什么时候发
+      - 几天到
+      - 发货时间
+      - 多久发货
+      - 几天发货
+
+  - id: faq_payment
+    name: 支付问题
+    type: faq
+    enabled: true
+    priority: 5
+    keywords:
+      - 支付
+      - 付款
+      - 怎么付
+      - 支付宝
+      - 微信
+      - 银行卡
+      - 支付方式
+
+  - id: faq_refund_time
+    name: 退款时效
+    type: faq
+    enabled: true
+    priority: 5
+    keywords:
+      - 退款到账
+      - 什么时候退
+      - 几天到
+      - 退款时间
+      - 退款多久
+      - 多久到账
+
+  - id: faq_account
+    name: 账户问题
+    type: faq
+    enabled: true
+    priority: 5
+    keywords:
+      - 登录
+      - 注册
+      - 密码
+      - 账户
+      - 账号
+      - 找回密码
+      - 修改密码
+
+  - id: faq_promotion
+    name: 活动优惠
+    type: faq
+    enabled: true
+    priority: 4
+    keywords:
+      - 优惠
+      - 活动
+      - 折扣
+      - 便宜
+      - 满减
+      - 优惠券
+      - 特价
+
+  - id: faq_product
+    name: 产品咨询
+    type: faq
+    enabled: true
+    priority: 4
+    keywords:
+      - 产品
+      - 商品
+      - 质量
+      - 尺寸
+      - 规格
+      - 这个怎么样
+
+  - id: faq_return_policy
+    name: 退货政策
+    type: faq
+    enabled: true
+    priority: 4
+    keywords:
+      - 退货政策
+      - 退换货
+      - 保修
+      - 售后
+      - 包邮
+
+  - id: faq_contact
+    name: 联系客服
+    type: faq
+    enabled: true
+    priority: 3
+    keywords:
+      - 联系客服
+      - 人工客服
+      - 电话
+      - 客服电话
+      - 怎么联系
