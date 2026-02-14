@@ -3,6 +3,7 @@ package service
 import (
 	"ai-agent/internal/aiclient"
 	"ai-agent/model"
+	"context"
 	"log"
 )
 
@@ -18,21 +19,21 @@ func NewDecisionLayer(aiClient *aiclient.Client) *DecisionLayer {
 }
 
 // Decide 核心决策方法
-func (d *DecisionLayer) Decide(req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
+func (d *DecisionLayer) Decide(ctx context.Context, req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
 	log.Printf("[DecisionLayer] session=%s, state=%s, current_step=%s",
 		session.ID, session.State, session.CurrentStep)
 
 	// 场景1: 已在 Flow 中
 	if session.State == model.SessionOnFlow {
-		return d.handleOnFlow(req, session)
+		return d.handleOnFlow(ctx, req, session)
 	}
 
 	// 场景2: 不在 Flow 中
-	return d.handleNotOnFlow(req, session)
+	return d.handleNotOnFlow(ctx, req, session)
 }
 
 // handleOnFlow 处理已在 Flow 中的情况
-func (d *DecisionLayer) handleOnFlow(req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
+func (d *DecisionLayer) handleOnFlow(ctx context.Context, req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
 	log.Printf("[DecisionLayer] OnFlow, checking interrupt...")
 
 	// 调用 Python 判断是否打断 Flow
@@ -57,7 +58,7 @@ func (d *DecisionLayer) handleOnFlow(req model.ChatRequest, session *model.Sessi
 	if resp.ShouldInterrupt {
 		log.Printf("[DecisionLayer] Flow被打断，重新决策 intent=%s", resp.NewIntent)
 		// 打断 Flow，重新走 Intent 决策
-		return d.handleNotOnFlow(req, session)
+		return d.handleNotOnFlow(ctx, req, session)
 	}
 
 	log.Printf("[DecisionLayer] 继续当前 Flow")
@@ -70,7 +71,7 @@ func (d *DecisionLayer) handleOnFlow(req model.ChatRequest, session *model.Sessi
 }
 
 // handleNotOnFlow 处理不在 Flow 中的情况
-func (d *DecisionLayer) handleNotOnFlow(req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
+func (d *DecisionLayer) handleNotOnFlow(ctx context.Context, req model.ChatRequest, session *model.Session) (*model.DecisionResult, error) {
 	log.Printf("[DecisionLayer] NotOnFlow, 调用 Python 做 Intent 识别")
 
 	// 调用 Python Intent 识别
