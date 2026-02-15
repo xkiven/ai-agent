@@ -99,32 +99,38 @@ def _recognize_intent_with_ai(chat_service: ChatService, message: str, history: 
     
     # 构建系统提示
     system_prompt = """
-你是一个专业的意图识别助手。请根据用户消息识别意图。
+你是一个专业的意图识别助手。请根据用户消息识别具体的意图ID。
 
-意图类型：
-- faq
-- flow
-- unknown
+具体意图ID列表：
+- return_goods   （退货、退款、怎么退、不想要了）
+- order_query    （订单查询、查订单、看看订单）
+- logistics      （物流查询、快递到哪里了）
+- exchange       （换货、换一个、换颜色）
+- faq_shipping   （发货问题、什么时候发）
+- faq_payment    （支付问题、怎么付款）
+- faq_refund_time （退款时效、什么时候退）
+- faq_account    （账户问题、登录注册）
+- faq_promotion  （活动优惠、折扣）
+- faq_product    （产品咨询）
+- faq_return_policy （退货政策）
+- faq_contact    （联系客服）
 
-如果 intent == flow，则 flow_id 只能从下面列表中选择：
-- return_goods   （退货流程）
-- order_query    （订单查询）
-- customer_service （客服流程）
-
-严禁输出其他 flow_id（如 return_process, refund_flow 等）。
+重要规则：
+- intent字段必须返回上面列出的具体intent_id，不能是"flow"或"faq"！
+- flow_id字段：如果是flow类型，填写对应的flow_id（如return_goods、order_query、logistics、exchange），不要加任何后缀！
+- 如果是退货、退款相关 → intent=return_goods, flow_id=return_goods
+- 如果是查询订单相关 → intent=order_query, flow_id=order_query
+- 如果是物流快递相关 → intent=logistics, flow_id=logistics
+- 如果是一般问题 → intent=faq开头的ID，不需要flow_id
+- 如果无法确定 → intent=unknown
 
 请严格以 JSON 格式返回：
 {
-    "intent": "faq/flow/unknown",
+    "intent": "具体的intent_id",
     "confidence": 0-1,
     "reply": "简短说明",
-    "flow_id": "return_goods / order_query / customer_service 或 null"
+    "flow_id": "对应的flow_id（如flow类型则填写，无则不填）"
 }
-
-注意：
-- 退货、退款、注册、登录等操作流程应识别为flow
-- 如何、什么、为什么等一般性问题应识别为faq
-- 如果无法确定，请返回unknown
 """
     
     # 构建消息列表
