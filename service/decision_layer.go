@@ -75,7 +75,7 @@ func (d *DecisionLayer) handleNotOnFlow(ctx context.Context, req model.ChatReque
 	intentReq := model.IntentRecognitionRequest{
 		SessionID: session.ID,
 		Message:   req.Message,
-		History:   req.History,
+		History:   session.Messages,
 	}
 
 	intentResp, err := d.aiClient.RecognizeIntent(intentReq)
@@ -88,6 +88,16 @@ func (d *DecisionLayer) handleNotOnFlow(ctx context.Context, req model.ChatReque
 		intentResp.Intent, intentResp.Confidence, intentResp.FlowID)
 
 	// 使用TypeClassify进行类型路由
+	// 当 intent 是 "faq" 类型时，直接走 RAG 流程
+	if intentResp.Intent == "faq" {
+		log.Printf("[DecisionLayer] 意图 %s -> RAG", intentResp.Intent)
+		return &model.DecisionResult{
+			Type:       model.DecisionRAG,
+			Confidence: intentResp.Confidence,
+			Reply:      intentResp.Reply,
+		}, nil
+	}
+
 	// 当 intent 是 "flow" 类型时，使用 flow_id（优先用 Python 返回的，否则用当前会话的）
 	if intentResp.Intent == "flow" {
 		flowID := intentResp.FlowID
