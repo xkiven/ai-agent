@@ -258,3 +258,28 @@ func (s *ChatService) CreateTicket(ctx context.Context, userID, sessionID, descr
 func (s *ChatService) Ping(ctx context.Context) error {
 	return s.store.Ping(ctx)
 }
+
+// CallPythonKnowledgeAdd 调用 Python 添加知识
+func (s *ChatService) CallPythonKnowledgeAdd(req model.KnowledgeRequest) (*model.KnowledgeResponse, error) {
+	return s.ai.CallKnowledgeAdd(req)
+}
+
+// CallPythonKnowledgeList 调用 Python 获取知识列表
+func (s *ChatService) CallPythonKnowledgeList() (*model.KnowledgeListResponse, error) {
+	return s.ai.CallKnowledgeList()
+}
+
+// CallPythonKnowledgeDelete 调用 Python 删除知识
+func (s *ChatService) CallPythonKnowledgeDelete(index string) (*model.KnowledgeResponse, error) {
+	return s.ai.CallKnowledgeDelete(index)
+}
+
+// CallPythonKnowledgeClear 调用 Python 清空知识库
+func (s *ChatService) CallPythonKnowledgeClear() (*model.KnowledgeResponse, error) {
+	return s.ai.CallKnowledgeClear()
+}
+
+// CallPythonKnowledgeCount 调用 Python 获取知识数量
+func (s *ChatService) CallPythonKnowledgeCount() (*model.KnowledgeResponse, error) {
+	return s.ai.CallKnowledgeCount()
+}

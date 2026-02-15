@@ -32,4 +32,13 @@ func Register(r *gin.Engine, chatSvc *service.ChatService) {
 		sessionGroup.GET("/:session_id/history", api.SessionHistoryHandler(chatSvc))
 		sessionGroup.DELETE("/:session_id", api.ClearSessionHandler(chatSvc))
 	}
+
+	knowledgeGroup := r.Group("/knowledge")
+	{
+		knowledgeGroup.POST("/add", api.AddKnowledgeHandler(chatSvc))
+		knowledgeGroup.GET("/list", api.ListKnowledgeHandler(chatSvc))
+		knowledgeGroup.DELETE("/delete", api.DeleteKnowledgeHandler(chatSvc))
+		knowledgeGroup.DELETE("/clear", api.ClearKnowledgeHandler(chatSvc))
+		knowledgeGroup.GET("/count", api.KnowledgeCountHandler(chatSvc))
+	}
 }

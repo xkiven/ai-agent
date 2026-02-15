@@ -109,3 +109,105 @@ func (c *Client) CheckFlowInterrupt(req model.InterruptCheckRequest) (*model.Int
 	}
 	return &ir, nil
 }
+
+func (c *Client) CallKnowledgeAdd(req model.KnowledgeRequest) (*model.KnowledgeResponse, error) {
+	bs, _ := json.Marshal(req)
+
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/knowledge/add", bytes.NewReader(bs))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var kr model.KnowledgeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&kr); err != nil {
+		return nil, err
+	}
+	return &kr, nil
+}
+
+func (c *Client) CallKnowledgeList() (*model.KnowledgeListResponse, error) {
+	httpReq, err := http.NewRequest("GET", c.baseURL+"/knowledge/list", nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var kr model.KnowledgeListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&kr); err != nil {
+		return nil, err
+	}
+	return &kr, nil
+}
+
+func (c *Client) CallKnowledgeDelete(index string) (*model.KnowledgeResponse, error) {
+	httpReq, err := http.NewRequest("DELETE", c.baseURL+"/knowledge/delete?index="+index, nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var kr model.KnowledgeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&kr); err != nil {
+		return nil, err
+	}
+	return &kr, nil
+}
+
+func (c *Client) CallKnowledgeClear() (*model.KnowledgeResponse, error) {
+	httpReq, err := http.NewRequest("DELETE", c.baseURL+"/knowledge/clear", nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var kr model.KnowledgeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&kr); err != nil {
+		return nil, err
+	}
+	return &kr, nil
+}
+
+func (c *Client) CallKnowledgeCount() (*model.KnowledgeResponse, error) {
+	httpReq, err := http.NewRequest("GET", c.baseURL+"/knowledge/count", nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var kr model.KnowledgeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&kr); err != nil {
+		return nil, err
+	}
+	return &kr, nil
+}

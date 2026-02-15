@@ -41,6 +41,11 @@ var Flows = FlowRegistry{
 		"ask_description": flows.HandleCSAskDescription,
 		"ask_contact":     flows.HandleCSAskContact,
 	},
+	// 物流查询流程
+	"logistics": {
+		"start": flows.HandleLogisticsStart,
+		"query": flows.HandleLogisticsQuery,
+	},
 }
 
 // handleFlowStateMachine 状态机处理器
