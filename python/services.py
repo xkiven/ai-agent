@@ -128,7 +128,6 @@ def _recognize_intent_with_ai(chat_service: ChatService, message: str, history: 
 {
     "intent": "具体的intent_id",
     "confidence": 0-1,
-    "reply": "简短说明",
     "flow_id": "对应的flow_id（如flow类型则填写，无则不填）"
 }
 """
@@ -177,13 +176,14 @@ def _recognize_intent_with_ai(chat_service: ChatService, message: str, history: 
         # 尝试解析JSON响应
         try:
             intent_data = json.loads(content)
+            # 不需要 reply 字段
+            intent_data.pop("reply", None)
             return IntentRecognitionResponse(**intent_data)
         except json.JSONDecodeError:
             # 如果JSON解析失败，返回默认响应
             return IntentRecognitionResponse(
                 intent="unknown",
-                confidence=0.5,
-                reply="意图识别失败，请稍后再试。"
+                confidence=0.5
             )
             
     except Exception as e:

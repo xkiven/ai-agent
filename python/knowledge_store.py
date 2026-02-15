@@ -72,6 +72,8 @@ class KnowledgeStore:
 
         # 保存 metadata
         if metadata:
+            for i, m in enumerate(metadata):
+                m["text"] = texts[i]
             self.metadata.extend(metadata)
         else:
             for text in texts:
@@ -116,6 +118,31 @@ class KnowledgeStore:
 
         return results
 
+    def delete(self, index: int) -> bool:
+        """删除指定索引的知识"""
+        if not self.index or index < 0 or index >= self.index.ntotal:
+            return False
+        # 删除指定索引的 metadata
+        if index < len(self.metadata):
+            del self.metadata[index]
+        # 重建索引（FAISS 不支持直接删除向量）
+        # 获取剩余向量
+        if self.index.ntotal > 1:
+            vectors = self.index.reconstruct_n(0, self.index.ntotal)
+            # 删除指定行
+            vectors = np.delete(vectors, index, axis=0)
+            # 重建索引
+            dim = vectors.shape[1]
+            self.index = faiss.IndexFlatIP(dim)
+            faiss.normalize_L2(vectors)
+            self.index.add(vectors)
+        else:
+            self.index.reset()
+            self.metadata = []
+        self._save()
+        print(f"Deleted knowledge at index {index}")
+        return True
+
     def delete_all(self):
         """删除所有知识"""
         if self.index:
@@ -123,6 +150,10 @@ class KnowledgeStore:
         self.metadata = []
         self._save()
         print("All knowledge deleted")
+
+    def list_knowledge(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """获取知识列表"""
+        return self.metadata[offset:offset + limit]
 
     def count(self) -> int:
         """返回知识库中的条目数"""
