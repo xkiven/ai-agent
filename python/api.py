@@ -13,12 +13,16 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from models import ChatRequest, ChatResponse, IntentRecognitionRequest, IntentRecognitionResponse, Ticket, InterruptCheckRequest, InterruptCheckResponse
 from services import ChatService, init_intent_vector_service
+from knowledge_store import init_knowledge_store
 
 
 router = APIRouter()
 
 # 初始化意图向量服务
 init_intent_vector_service()
+
+# 初始化知识库服务
+init_knowledge_store()
 
 chat_service = ChatService()
 

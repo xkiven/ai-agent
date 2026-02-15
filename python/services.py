@@ -8,6 +8,7 @@ from typing import List, Optional
 from models import Message, IntentRecognitionResponse, InterruptCheckRequest, InterruptCheckResponse
 from config import config
 from vector_store import get_embedding_service, get_milvus_store
+from knowledge_store import get_knowledge_store, init_knowledge_store
 
 try:
     from intent_vector_service import IntentVectorService
@@ -440,22 +441,15 @@ def _check_flow_interrupt(chat_service: ChatService, request: InterruptCheckRequ
 def _retrieve_context(chat_service: ChatService, query: str, top_k: int = 3) -> str:
     """从向量库检索相关上下文"""
     try:
-        # 检查 Milvus 是否配置
-        if not config.milvus or not config.embedding:
-            print("Milvus/Embedding 未配置，跳过 RAG 检索")
+        # 使用 FAISS 知识库检索
+        knowledge_store = get_knowledge_store()
+        if not knowledge_store:
+            print("知识库未初始化，跳过 RAG 检索")
             return ""
 
-        # 获取向量服务
-        embedding_service = get_embedding_service()
-        milvus_store = get_milvus_store()
-
-        # 将查询转换为向量
-        print(f"生成查询向量: {query[:50]}...")
-        query_vector = embedding_service.embed_text(query)
-
         # 检索相似内容
-        print(f"检索相似内容 top_k={top_k}")
-        results = milvus_store.search(query_vector, top_k=top_k)
+        print(f"RAG检索相似内容 top_k={top_k}")
+        results = knowledge_store.search(query, top_k=top_k)
 
         if not results:
             print("未找到相关内容")
@@ -480,11 +474,11 @@ def _retrieve_context(chat_service: ChatService, query: str, top_k: int = 3) -> 
 def _add_knowledge(chat_service: ChatService, texts: List[str], metadata: Optional[List[dict]] = None):
     """添加知识到向量库"""
     try:
-        if not config.milvus or not config.embedding:
-            raise ValueError("Milvus/Embedding 未配置")
+        knowledge_store = get_knowledge_store()
+        if not knowledge_store:
+            raise ValueError("知识库未初始化")
 
-        milvus_store = get_milvus_store()
-        milvus_store.add_texts(texts, metadata)
+        knowledge_store.add_texts(texts, metadata)
         print(f"成功添加 {len(texts)} 条知识")
 
     except Exception as e:

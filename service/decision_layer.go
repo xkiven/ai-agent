@@ -84,10 +84,27 @@ func (d *DecisionLayer) handleNotOnFlow(ctx context.Context, req model.ChatReque
 		return nil, err
 	}
 
-	log.Printf("[DecisionLayer] Intent识别结果: intent=%s, confidence=%.2f",
-		intentResp.Intent, intentResp.Confidence)
+	log.Printf("[DecisionLayer] Intent识别结果: intent=%s, confidence=%.2f, flow_id=%s",
+		intentResp.Intent, intentResp.Confidence, intentResp.FlowID)
 
 	// 使用TypeClassify进行类型路由
+	// 当 intent 是 "flow" 类型时，使用 flow_id（优先用 Python 返回的，否则用当前会话的）
+	if intentResp.Intent == "flow" {
+		flowID := intentResp.FlowID
+		if flowID == "" {
+			flowID = session.FlowID
+		}
+		if flowID != "" {
+			log.Printf("[DecisionLayer] 意图 %s -> Flow, flow_id=%s", intentResp.Intent, flowID)
+			return &model.DecisionResult{
+				Type:       model.DecisionNewIntent,
+				FlowID:     flowID,
+				Confidence: intentResp.Confidence,
+				Reply:      intentResp.Reply,
+			}, nil
+		}
+	}
+
 	result := d.typeClassify.Classify(string(intentResp.Intent))
 	result.Confidence = intentResp.Confidence
 	result.Reply = intentResp.Reply
