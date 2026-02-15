@@ -263,9 +263,9 @@ def _recognize_intent_by_vector(message: str) -> Optional[IntentRecognitionRespo
         result = intent_service.find_similar(message, top_k=1, threshold=0.6)
         if not result:
             return None
-            
+
         return IntentRecognitionResponse(
-            intent=result["type"],
+            intent=result["intent_id"],
             confidence=result["confidence"],
             flow_id=result.get("next_flow"),
             reply=f"已识别为{result['intent_name']}"
