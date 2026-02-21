@@ -20,6 +20,193 @@ except ImportError:
     EmbeddingService = None
 
 
+# ==================== Function Calling Mock 数据 ====================
+MOCK_ORDERS = {
+    "123456": {
+        "order_id": "123456",
+        "status": "已发货",
+        "product": "iPhone 15 Pro 256GB",
+        "amount": "7999元",
+        "create_time": "2026-02-10 10:30:00",
+        "logistics_company": "顺丰速运",
+        "logistics_no": "SF1234567890"
+    },
+    "789012": {
+        "order_id": "789012",
+        "status": "配送中",
+        "product": "MacBook Air M3",
+        "amount": "9499元",
+        "create_time": "2026-02-12 15:20:00",
+        "logistics_company": "圆通速递",
+        "logistics_no": "YT7890123456"
+    },
+    "345678": {
+        "order_id": "345678",
+        "status": "已签收",
+        "product": "AirPods Pro 2",
+        "amount": "1899元",
+        "create_time": "2026-02-08 09:00:00",
+        "logistics_company": "京东物流",
+        "logistics_no": "JD3456789012"
+    }
+}
+
+MOCK_LOGISTICS = {
+    "SF1234567890": {
+        "logistics_no": "SF1234567890",
+        "company": "顺丰速运",
+        "status": "派送中",
+        "current": "北京市朝阳区XX街道营业部",
+        "track": [
+            {"time": "2026-02-15 08:00", "status": "正在派送中"},
+            {"time": "2026-02-14 20:00", "status": "到达北京分拨中心"},
+            {"time": "2026-02-13 15:00", "status": "已发货"}
+        ]
+    },
+    "YT7890123456": {
+        "logistics_no": "YT7890123456",
+        "company": "圆通速递",
+        "status": "运输中",
+        "current": "上海市青浦区XX中转站",
+        "track": [
+            {"time": "2026-02-15 10:00", "status": "运输中"},
+            {"time": "2026-02-14 18:00", "status": "已到达上海分拨中心"},
+            {"time": "2026-02-13 12:00", "status": "已发货"}
+        ]
+    },
+    "JD3456789012": {
+        "logistics_no": "JD3456789012",
+        "company": "京东物流",
+        "status": "已签收",
+        "current": "已签收",
+        "track": [
+            {"time": "2026-02-14 14:00", "status": "已签收"},
+            {"time": "2026-02-14 08:00", "status": "配送员正在为您派送"},
+            {"time": "2026-02-13 20:00", "status": "已到达配送站"}
+        ]
+    }
+}
+
+
+# ==================== Function Calling 工具定义 ====================
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "query_order",
+            "description": "查询订单状态和详细信息。当用户问订单相关问题（如订单在哪、订单状态、订单详情）时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {
+                        "type": "string",
+                        "description": "订单号"
+                    }
+                },
+                "required": ["order_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_logistics",
+            "description": "查询快递物流信息。当用户问快递、物流、运单相关问题时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "logistics_no": {
+                        "type": "string",
+                        "description": "快递单号"
+                    },
+                    "order_id": {
+                        "type": "string",
+                        "description": "订单号（如果有的话）"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_ticket",
+            "description": "创建客服工单。当用户需要投诉、反馈问题、无法解决的问题需要转人工时使用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "工单标题"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "工单内容"
+                    },
+                    "ticket_type": {
+                        "type": "string",
+                        "description": "工单类型：complaint(投诉)、feedback(反馈)、consult(咨询)",
+                        "enum": ["complaint", "feedback", "consult"]
+                    }
+                },
+                "required": ["title", "content"]
+            }
+        }
+    }
+]
+
+
+def execute_tool(tool_name: str, arguments: dict) -> str:
+    """执行工具函数并返回结果"""
+    try:
+        if tool_name == "query_order":
+            order_id = arguments.get("order_id", "")
+            order = MOCK_ORDERS.get(order_id)
+            if order:
+                return json.dumps(order, ensure_ascii=False)
+            else:
+                return json.dumps({"error": f"未找到订单 {order_id}"}, ensure_ascii=False)
+        
+        elif tool_name == "query_logistics":
+            logistics_no = arguments.get("logistics_no", "")
+            order_id = arguments.get("order_id", "")
+            
+            # 优先用快递单号查，其次用订单号查
+            logistics = None
+            if logistics_no:
+                logistics = MOCK_LOGISTICS.get(logistics_no)
+            elif order_id:
+                # 从订单中获取快递信息
+                order = MOCK_ORDERS.get(order_id)
+                if order and order.get("logistics_no"):
+                    logistics = MOCK_LOGISTICS.get(order["logistics_no"])
+            
+            if logistics:
+                return json.dumps(logistics, ensure_ascii=False)
+            else:
+                return json.dumps({"error": "未找到物流信息"}, ensure_ascii=False)
+        
+        elif tool_name == "create_ticket":
+            import uuid
+            ticket_id = f"TKT-{uuid.uuid4().hex[:8].upper()}"
+            ticket = {
+                "ticket_id": ticket_id,
+                "title": arguments.get("title", ""),
+                "content": arguments.get("content", ""),
+                "ticket_type": arguments.get("ticket_type", "consult"),
+                "status": "created",
+                "message": "工单创建成功，客服将尽快处理"
+            }
+            return json.dumps(ticket, ensure_ascii=False)
+        
+        else:
+            return json.dumps({"error": f"未知工具: {tool_name}"}, ensure_ascii=False)
+    
+    except Exception as e:
+        return json.dumps({"error": f"执行工具失败: {str(e)}"}, ensure_ascii=False)
+
+
 # 全局意图向量服务
 _intent_vector_service: Optional[object] = None
 
@@ -307,6 +494,8 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
     - 如果知识库中没有相关信息，请如实说明
     - 如果是 flow，请引导用户继续完成该流程 
     - 如果是 unknown，请礼貌说明并建议转人工 
+    - 如果用户询问订单、物流相关信息，可以使用工具查询
+    - 如果用户需要投诉或转人工，可以使用工具创建工单
     """
     else:
         system_prompt += """
@@ -314,6 +503,8 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
     - 如果是 flow，请引导用户继续完成该流程 
     - 如果是 faq，请直接回答用户问题 
     - 如果是 unknown，请礼貌说明并建议转人工 
+    - 如果用户询问订单、物流相关信息，可以使用工具查询
+    - 如果用户需要投诉或转人工，可以使用工具创建工单
     """
 
     messages = [
@@ -336,6 +527,7 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
     data = {
         "model": chat_service.api_model,
         "messages": messages,
+        "tools": TOOLS,
         "temperature": 0.7,
         "max_tokens": 500
     }
@@ -352,7 +544,56 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
             raise Exception(f"API请求失败: {response.status_code}, {response.text}")
 
         result = response.json()
-        return result["choices"][0]["message"]["content"]
+        assistant_message = result["choices"][0]["message"]
+
+        # 检查是否需要调用工具
+        if "tool_calls" in assistant_message:
+            tool_calls = assistant_message["tool_calls"]
+            print(f"Function Calling: 检测到 {len(tool_calls)} 个工具调用")
+
+            # 执行工具调用
+            for tool_call in tool_calls:
+                func_name = tool_call["function"]["name"]
+                func_args = json.loads(tool_call["function"]["arguments"])
+                print(f"执行工具: {func_name}, 参数: {func_args}")
+
+                # 执行工具并获取结果
+                tool_result = execute_tool(func_name, func_args)
+                print(f"工具返回: {tool_result}")
+
+                # 将工具结果添加到消息中
+                messages.append({
+                    "role": "assistant",
+                    "tool_calls": tool_calls
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content": tool_result
+                })
+
+            # 再次调用 LLM 生成最终回复
+            data2 = {
+                "model": chat_service.api_model,
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 500
+            }
+
+            response2 = requests.post(
+                f"{chat_service.openai_base_url}/chat/completions",
+                headers=headers,
+                json=data2,
+                timeout=config.llm.timeout
+            )
+
+            if response2.status_code != 200:
+                raise Exception(f"二次调用失败: {response2.status_code}")
+
+            result2 = response2.json()
+            return result2["choices"][0]["message"]["content"]
+
+        return assistant_message["content"]
 
     except Exception as e:
         print(f"生成回复失败: {e}")
