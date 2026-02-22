@@ -4,6 +4,7 @@ import (
 	"ai-agent/dao"
 	"ai-agent/internal/aiclient"
 	"ai-agent/model"
+	"ai-agent/service/flows"
 	"context"
 	"errors"
 	"log"
@@ -26,6 +27,10 @@ func NewChatService(ai *aiclient.Client, store *dao.RedisStore, intentDefs []mod
 		store: store,
 	}
 	svc.decisionLayer = NewDecisionLayer(ai, intentDefs)
+
+	// 设置 AI 客户端到 flows 包
+	flows.SetAIClient(ai)
+
 	return svc
 }
 

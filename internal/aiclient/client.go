@@ -4,6 +4,7 @@ import (
 	"ai-agent/model"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -210,4 +211,46 @@ func (c *Client) CallKnowledgeCount() (*model.KnowledgeResponse, error) {
 		return nil, err
 	}
 	return &kr, nil
+}
+
+type FlowToolRequest struct {
+	ToolName  string            `json:"tool_name"`
+	Arguments map[string]string `json:"arguments"`
+}
+
+type FlowToolResponse struct {
+	Success bool   `json:"success"`
+	Result  string `json:"result"`
+	Error   string `json:"error,omitempty"`
+}
+
+func (c *Client) CallFlowTool(toolName string, params map[string]string) (string, error) {
+	req := FlowToolRequest{
+		ToolName:  toolName,
+		Arguments: params,
+	}
+	bs, _ := json.Marshal(req)
+
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/flow/execute-tool", bytes.NewReader(bs))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var fr FlowToolResponse
+	if err := json.NewDecoder(resp.Body).Decode(&fr); err != nil {
+		return "", err
+	}
+
+	if !fr.Success {
+		return "", fmt.Errorf(fr.Error)
+	}
+
+	return fr.Result, nil
 }
