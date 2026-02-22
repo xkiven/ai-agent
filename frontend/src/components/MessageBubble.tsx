@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { Message } from '../types';
 
 interface MessageBubbleProps {
@@ -64,7 +65,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             {expanded && <JsonDisplay data={jsonData} />}
           </>
         ) : (
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          <div className="whitespace-pre-wrap break-words prose prose-sm max-w-none">
+            <ReactMarkdown>{message.content}</ReactMarkdown>
+          </div>
         )}
         {message.timestamp && (
           <p className={`text-xs mt-1 ${isUser ? 'text-blue-100' : 'text-gray-400'}`}>

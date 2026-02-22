@@ -59,7 +59,7 @@ function HistoryModal({ sessionId, onClose }: { sessionId: string; onClose: () =
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessionId] = useState(() => generateId());
-  const [userId] = useState(() => 'user-' + generateId(8));
+  const [userId] = useState(() => 'user-' + generateId());
   const [sessionState, setSessionState] = useState<SessionState>();
   const [intentType, setIntentType] = useState<IntentType>();
   const [loading, setLoading] = useState(false);

@@ -224,6 +224,49 @@ type FlowToolResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+type FormatResponseRequest struct {
+	ToolName    string `json:"tool_name"`
+	RawResult   string `json:"raw_result"`
+	UserMessage string `json:"user_message"`
+}
+
+type FormatResponseResponse struct {
+	Success        bool   `json:"success"`
+	FormattedReply string `json:"formatted_reply"`
+}
+
+func (c *Client) FormatToolResponse(toolName, rawResult, userMessage string) (string, error) {
+	req := FormatResponseRequest{
+		ToolName:    toolName,
+		RawResult:   rawResult,
+		UserMessage: userMessage,
+	}
+	bs, _ := json.Marshal(req)
+
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/tool/format-response", bytes.NewReader(bs))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpCli.Do(httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var fr FormatResponseResponse
+	if err := json.NewDecoder(resp.Body).Decode(&fr); err != nil {
+		return "", err
+	}
+
+	if !fr.Success {
+		return rawResult, nil
+	}
+
+	return fr.FormattedReply, nil
+}
+
 func (c *Client) CallFlowTool(toolName string, params map[string]string) (string, error) {
 	req := FlowToolRequest{
 		ToolName:  toolName,

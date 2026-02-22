@@ -91,6 +91,40 @@ def check_flow_interrupt_endpoint(request: InterruptCheckRequest):
     return chat_service.check_flow_interrupt(request)
 
 
+class FormatResponseRequest(BaseModel):
+    """格式化响应请求"""
+    tool_name: str
+    raw_result: str
+    user_message: str
+
+
+class FormatResponseResponse(BaseModel):
+    """格式化响应响应"""
+    success: bool
+    formatted_reply: str
+
+
+@router.post("/tool/format-response", response_model=FormatResponseResponse)
+def format_response_endpoint(request: FormatResponseRequest):
+    """将工具返回的原始结果格式化成自然语言回复"""
+    try:
+        import services
+        formatted = services.format_tool_result(
+            request.tool_name,
+            request.raw_result,
+            request.user_message
+        )
+        return FormatResponseResponse(
+            success=True,
+            formatted_reply=formatted
+        )
+    except Exception as e:
+        return FormatResponseResponse(
+            success=False,
+            formatted_reply=f"格式化失败: {str(e)}"
+        )
+
+
 @router.post("/flow/execute-tool", response_model=ExecuteToolResponse)
 def execute_tool_endpoint(request: ExecuteToolRequest):
     """执行工具函数"""

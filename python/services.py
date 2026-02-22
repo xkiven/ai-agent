@@ -19,6 +19,15 @@ except ImportError:
     IntentVectorService = None
     EmbeddingService = None
 
+try:
+    from intent_vector_service import IntentVectorService
+    from embedding_service import EmbeddingService
+    INTENT_VECTOR_AVAILABLE = True
+except ImportError:
+    INTENT_VECTOR_AVAILABLE = False
+    IntentVectorService = None
+    EmbeddingService = None
+
 
 # ==================== Function Calling Mock 数据 ====================
 MOCK_ORDERS = {
@@ -205,6 +214,71 @@ def execute_tool(tool_name: str, arguments: dict) -> str:
     
     except Exception as e:
         return json.dumps({"error": f"执行工具失败: {str(e)}"}, ensure_ascii=False)
+
+
+def format_tool_result(tool_name: str, raw_result: str, user_message: str) -> str:
+    """将工具返回的原始 JSON 结果格式化成自然语言回复"""
+    try:
+        # 如果不是 JSON， 直接返回
+        try:
+            data = json.loads(raw_result)
+        except:
+            return raw_result
+        
+        # 检查是否有错误
+        if isinstance(data, dict) and "error" in data:
+            return f"查询失败：{data['error']}"
+        
+        # 构建格式化 prompt
+        format_prompt = f"""你是一个智能客服。请将以下工具返回的数据转换成自然、友好的语言回复客户。
+
+用户问题：{user_message}
+工具名称：{tool_name}
+原始数据：{raw_result}
+
+要求：
+1. 将JSON数据转换成自然语言描述
+2. 不要显示原始JSON数据给客户
+3. 用友好的语气回复客户
+4. 如果需要，可以添加适当的emoji表情
+5. 结尾可以加一句"如需其他帮助，请继续提问。"
+
+请直接输出回复内容，不要输出其他内容。
+"""
+        # 调用 LLM
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {config.llm.api_key}"
+        }
+        
+        messages = [
+            {"role": "system", "content": format_prompt},
+            {"role": "user", "content": "请格式化以上数据"}
+        ]
+        
+        data = {
+            "model": config.llm.model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 500
+        }
+        
+        response = requests.post(
+            f"{config.llm.base_url}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=config.llm.timeout
+        )
+        
+        if response.status_code != 200:
+            return raw_result
+        
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+        
+    except Exception as e:
+        # 如果格式化失败，返回原始结果
+        return raw_result
 
 
 # 全局意图向量服务
@@ -478,34 +552,43 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
         context = _retrieve_context(chat_service, message, top_k=3)
 
     system_prompt = f""" 
-    你是一个智能客服助手，不说废话，直接回答用户问题。 
-    当前意图类型: {intent} 
-    当前流程ID: {flow_id} 
-    """
+你是一个智能客服助手。请用自然、友好的语言回答客户的问题。
+
+当前意图类型: {intent} 
+当前流程ID: {flow_id} 
+
+【重要】如果需要查询订单或物流信息，必须调用工具获取数据。
+
+【工具返回结果处理】
+当工具返回JSON数据时，你必须：
+1. 将JSON数据转换成自然语言描述
+2. 不要直接显示原始JSON数据给客户
+3. 用友好的方式呈现信息，例如：
+   - 原始: {{"order_id": "123456", "status": "已发货", "product": "iPhone 15"}}
+   - 正确: 您的订单(123456)已经发货啦！商品是iPhone 15，预计今天内送达～
+   - 原始: {{"logistics_no": "SF1234567890", "status": "派送中"}}
+   - 正确: 您的快递(SF1234567890)正在派送中，派送员马上就会送到您手中啦！
+"""
 
     # 添加知识库上下文
     if context:
         system_prompt += f"""
-    下面是知识库中与用户问题相关的参考信息：
-    {context}
+下面是知识库中与用户问题相关的参考信息：
+{context}
 
-    规则：
-    - 请优先基于以上知识库信息回答用户问题
-    - 如果知识库中没有相关信息，请如实说明
-    - 如果是 flow，请引导用户继续完成该流程 
-    - 如果是 unknown，请礼貌说明并建议转人工 
-    - 如果用户询问订单、物流相关信息，可以使用工具查询
-    - 如果用户需要投诉或转人工，可以使用工具创建工单
-    """
+规则：
+- 请优先基于以上知识库信息回答用户问题
+- 如果知识库中没有相关信息，请如实说明
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
     else:
         system_prompt += """
-    规则： 
-    - 如果是 flow，请引导用户继续完成该流程 
-    - 如果是 faq，请直接回答用户问题 
-    - 如果是 unknown，请礼貌说明并建议转人工 
-    - 如果用户询问订单、物流相关信息，可以使用工具查询
-    - 如果用户需要投诉或转人工，可以使用工具创建工单
-    """
+规则： 
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 faq，请直接回答用户问题 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -573,6 +656,23 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
                 })
 
             # 再次调用 LLM 生成最终回复
+            second_system_prompt = """
+【重要】你刚刚调用了工具获取数据。现在必须将工具返回的JSON数据转换成自然语言回复客户。
+
+工具返回的是原始数据，你必须：
+1. 将JSON中的每个字段转换成友好的文字描述
+2. 绝对不要显示原始JSON给客户！
+3. 用客户能理解的方式表达
+
+示例：
+- 订单状态：不要说"status: 已发货"，要说"您的订单已经发货啦～"
+- 商品信息：不要说"product: iPhone 15 Pro"，要说"您购买的是 iPhone 15 Pro"
+- 快递信息：不要说"logistics_no: SF1234567890"，要说"快递单号是 SF1234567890"
+
+请用友好的语气回复客户，就像真人客服一样！
+"""
+            messages.append({"role": "system", "content": second_system_prompt})
+            
             data2 = {
                 "model": chat_service.api_model,
                 "messages": messages,
