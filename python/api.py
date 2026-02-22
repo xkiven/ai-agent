@@ -76,6 +76,24 @@ def check_flow_interrupt_endpoint(request: InterruptCheckRequest):
     return chat_service.check_flow_interrupt(request)
 
 
+@router.post("/flow/execute-tool", response_model=ExecuteToolResponse)
+def execute_tool_endpoint(request: ExecuteToolRequest):
+    """执行工具函数"""
+    try:
+        import services
+        result = services.execute_tool(request.tool_name, request.arguments)
+        return ExecuteToolResponse(
+            success=True,
+            result=result
+        )
+    except Exception as e:
+        return ExecuteToolResponse(
+            success=False,
+            result="",
+            error=str(e)
+        )
+
+
 class AddKnowledgeRequest(BaseModel):
     """知识入库请求"""
     texts: List[str]
@@ -87,6 +105,19 @@ class AddKnowledgeResponse(BaseModel):
     success: bool
     count: int
     message: str
+
+
+class ExecuteToolRequest(BaseModel):
+    """执行工具请求"""
+    tool_name: str
+    arguments: Dict[str, Any] = {}
+
+
+class ExecuteToolResponse(BaseModel):
+    """执行工具响应"""
+    success: bool
+    result: str
+    error: Optional[str] = None
 
 
 @router.post("/knowledge/add", response_model=AddKnowledgeResponse)
