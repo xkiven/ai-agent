@@ -1,10 +1,21 @@
 package flows
 
 import (
+	"ai-agent/internal/aiclient"
 	"ai-agent/model"
 	"context"
 	"fmt"
+	"log"
 )
+
+var (
+	aiClient *aiclient.Client
+)
+
+// SetAIClient 设置 AI 客户端（由 service 层调用）
+func SetAIClient(client *aiclient.Client) {
+	aiClient = client
+}
 
 // ==================== 物流查询流程处理器 ====================
 
@@ -17,6 +28,19 @@ func HandleLogisticsStart(ctx context.Context, session *model.Session, userMessa
 func HandleLogisticsQuery(ctx context.Context, session *model.Session, userMessage string) (string, bool, string, error) {
 	orderID := userMessage
 
+	// 调用 Python 的 Function Calling 工具查询物流信息
+	if aiClient != nil {
+		result, err := aiClient.CallFlowTool("query_logistics", map[string]string{
+			"order_id": orderID,
+		})
+		if err != nil {
+			log.Printf("[Flow] 调用工具失败: %v", err)
+			return "查询失败，请稍后重试", true, "", nil
+		}
+		return fmt.Sprintf("订单 %s 的物流信息：\n%s\n\n如需其他帮助，请继续提问。", orderID, result), true, "", nil
+	}
+
+	// 如果没有 aiClient，使用 Mock 数据
 	var logisticsInfo string
 	switch orderID {
 	case "12345":
