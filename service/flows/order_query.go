@@ -4,6 +4,7 @@ import (
 	"ai-agent/model"
 	"context"
 	"fmt"
+	"log"
 )
 
 // ==================== 订单查询流程处理器 ====================
@@ -17,6 +18,21 @@ func HandleOrderQueryStart(ctx context.Context, session *model.Session, userMess
 func HandleOrderQueryProcessing(ctx context.Context, session *model.Session, userMessage string) (string, bool, string, error) {
 	orderID := userMessage
 
+	// 调用 Python 的 Function Calling 工具查询订单信息
+	if aiClient != nil {
+		log.Printf("[Flow order_query] 调用工具 query_order, order_id=%s", orderID)
+		result, err := aiClient.CallFlowTool("query_order", map[string]string{
+			"order_id": orderID,
+		})
+		if err != nil {
+			log.Printf("[Flow order_query] 调用工具失败: %v", err)
+			return "查询失败，请稍后重试", true, "", nil
+		}
+		log.Printf("[Flow order_query] 工具返回结果: %s", result)
+		return fmt.Sprintf("订单 %s 的状态：\n%s\n\n如需其他帮助，请继续提问。", orderID, result), true, "", nil
+	}
+
+	// 如果没有 aiClient，使用 Mock 数据
 	var status string
 	switch orderID {
 	case "12345":

@@ -51,6 +51,26 @@ var Flows = FlowRegistry{
 // handleFlowStateMachine 状态机处理器
 // 核心逻辑：从Session中获取当前步骤，调用对应的处理器，更新状态
 func (s *ChatService) handleFlowStateMachine(ctx context.Context, req model.ChatRequest, session *model.Session) (*model.ChatResponse, error) {
+	// 如果会话状态是 completed，提示用户重新开始
+	if session.State == model.SessionComplete {
+		log.Printf("[Session %s] 会话已完成，请用户重新开始", session.ID)
+		session.State = model.SessionNew
+		session.FlowID = ""
+		session.CurrentStep = ""
+		session.FlowState = nil
+
+		if err := s.store.SaveWithOptimisticLock(ctx, session, 3); err != nil {
+			log.Printf("[Session %s] 保存失败: %v", session.ID, err)
+		}
+
+		return &model.ChatResponse{
+			Reply:     "上一个流程已完成，请重新描述您的问题。",
+			Type:      model.IntentUnknown,
+			Session:   session.State,
+			SessionID: session.ID,
+		}, nil
+	}
+
 	// 获取当前Flow的处理器表
 	flowSteps, exists := Flows[session.FlowID]
 	if !exists {

@@ -28,17 +28,23 @@ func HandleLogisticsStart(ctx context.Context, session *model.Session, userMessa
 func HandleLogisticsQuery(ctx context.Context, session *model.Session, userMessage string) (string, bool, string, error) {
 	orderID := userMessage
 
+	log.Printf("[Flow logistics] 收到查询请求, order_id=%s", orderID)
+
 	// 调用 Python 的 Function Calling 工具查询物流信息
 	if aiClient != nil {
+		log.Printf("[Flow logistics] 调用工具 query_logistics")
 		result, err := aiClient.CallFlowTool("query_logistics", map[string]string{
 			"order_id": orderID,
 		})
 		if err != nil {
-			log.Printf("[Flow] 调用工具失败: %v", err)
+			log.Printf("[Flow logistics] 调用工具失败: %v", err)
 			return "查询失败，请稍后重试", true, "", nil
 		}
+		log.Printf("[Flow logistics] 工具返回结果: %s", result)
 		return fmt.Sprintf("订单 %s 的物流信息：\n%s\n\n如需其他帮助，请继续提问。", orderID, result), true, "", nil
 	}
+
+	log.Printf("[Flow logistics] aiClient 为空，使用 Mock 数据")
 
 	// 如果没有 aiClient，使用 Mock 数据
 	var logisticsInfo string
