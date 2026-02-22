@@ -706,29 +706,40 @@ def _check_flow_interrupt(chat_service: ChatService, request: InterruptCheckRequ
     
     # 构建系统提示
     system_prompt = f"""
-    你是一个Flow中断判断助手。请根据用户在当前流程中的输入，判断是否应该打断当前流程。
+你是一个Flow中断判断助手。请根据用户在当前流程中的输入，判断是否应该打断当前流程。
 
-    当前流程信息：
-    - 流程ID: {request.flow_id}
-    - 当前步骤: {request.current_step}
-    - 流程状态: {request.flow_state}
+当前流程信息：
+- 流程ID: {request.flow_id}
+- 当前步骤: {request.current_step}
+- 流程状态: {request.flow_state}
 
-    用户输入: {request.user_message}
+用户输入: {request.user_message}
 
-    判断规则：
-    1. 如果用户明确表示要退出、取消、停止当前流程，应该打断
-    2. 如果用户询问与当前流程无关的问题，应该打断
-    3. 如果用户输入包含明显的错误或误解，应该打断
-    4. 如果用户只是继续当前流程的正常操作，不应该打断
+【重要】判断规则（必须严格遵守）：
 
-    请以JSON格式返回判断结果，格式如下：
-    {{
-        "should_interrupt": true/false,
-        "confidence": 0-1之间的置信度,
-        "new_intent": "如果打断，建议的新意图类型(可选)",
-        "reason": "判断理由(可选)"
-    }}
-    """
+1. 应该打断的情况（should_interrupt=true）：
+   - 用户明确说"取消"、"退出"、"不办了"、"停止"、"算了"
+   - 用户说了一个完整的新意图，如"我要退货"、"我要投诉"、"帮我查物流"
+   - 用户明确要求转人工
+
+2. 不应该打断的情况（should_interrupt=false）：
+   - 用户输入只是简单的数字、字母、订单号、快递单号（如"123456"、"SF123456"）
+   - 用户在回答当前流程的问题（如问订单号就给了订单号）
+   - 用户输入是对当前流程问题的补充说明
+   - 用户只是确认或继续当前流程（如"好的"、"是的"、"继续"）
+
+【关键判断】
+如果用户输入看起来像是在回答当前流程的问题（如流程问订单号，用户给了订单号），
+或者只是一个简单的标识符（数字、字母），请优先认为用户是在继续当前流程！
+
+请以JSON格式返回判断结果，格式如下：
+{{
+    "should_interrupt": true/false,
+    "confidence": 0-1之间的置信度,
+    "new_intent": "如果打断，建议的新意图类型(可选)",
+    "reason": "判断理由(可选)"
+}}
+"""
 
     messages = [
         {"role": "system", "content": system_prompt},
