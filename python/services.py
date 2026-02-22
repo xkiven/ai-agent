@@ -344,6 +344,10 @@ class ChatService:
         """检查是否应该打断当前Flow"""
         return _check_flow_interrupt(self, request)
 
+    def generate_reply_stream(self, message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None):
+        """流式生成回复"""
+        return generate_reply_stream(self, message, intent, flow_id, history)
+
     def retrieve_context(self, query: str, top_k: int = 3) -> str:
         """从向量库检索相关上下文"""
         return _retrieve_context(self, query, top_k)
@@ -698,6 +702,271 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
     except Exception as e:
         print(f"生成回复失败: {e}")
         return "抱歉，当前系统繁忙，请稍后再试。"
+
+
+def generate_reply_stream(chat_service: ChatService, message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None):
+    """流式生成回复 - 生成器版本"""
+    
+    # RAG: 如果是 faq 意图，先检索相关知识
+    context = ""
+    if intent == "faq" or intent == "unknown":
+        context = _retrieve_context(chat_service, message, top_k=3)
+
+    system_prompt = f""" 
+你是一个智能客服助手。请用自然、友好的语言回答客户的问题。
+
+当前意图类型: {intent} 
+当前流程ID: {flow_id} 
+
+【重要】如果需要查询订单或物流信息，必须调用工具获取数据。
+
+【工具返回结果处理】
+当工具返回JSON数据时，你必须：
+1. 将JSON数据转换成自然语言描述
+2. 不要直接显示原始JSON数据给客户
+3. 用友好的方式呈现信息，例如：
+   - 原始: {{"order_id": "123456", "status": "已发货", "product": "iPhone 15"}}
+   - 正确: 您的订单(123456)已经发货啦！商品是iPhone 15，预计今天内送达～
+   - 原始: {{"logistics_no": "SF1234567890", "status": "派送中"}}
+   - 正确: 您的快递(SF1234567890)正在派送中，派送员马上就会送到您手中啦！
+"""
+
+    # 添加知识库上下文
+    if context:
+        system_prompt += f"""
+下面是知识库中与用户问题相关的参考信息：
+{context}
+
+规则：
+- 请优先基于以上知识库信息回答用户问题
+- 如果知识库中没有相关信息，请如实说明
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
+    else:
+        system_prompt += """
+规则： 
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 faq，请直接回答用户问题 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+    ]
+
+    # 加入历史对话
+    if history:
+        for msg in history:
+            messages.append({"role": msg.role, "content": msg.content})
+
+    # 加入当前用户消息
+    messages.append({"role": "user", "content": message})
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {chat_service.openai_api_key}"
+    }
+
+    data = {
+        "model": chat_service.api_model,
+        "messages": messages,
+        "tools": TOOLS,
+        "temperature": 0.2,
+        "max_tokens": 500,
+        "stream": True
+    }
+
+    try:
+        # 流式调用 LLM
+        response = requests.post(
+            f"{chat_service.openai_base_url}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=config.llm.timeout,
+            stream=True
+        )
+
+        if response.status_code != 200:
+            yield f"data: {{\"error\": \"API请求失败: {response.status_code}\"}}\n\n"
+            return
+
+        # 流式读取响应
+        tool_calls_raw = []  # 存储原始 tool_calls 块
+        tool_calls_collected = {}  # 收集完整的 tool_call
+        assistant_content = ""
+        has_tool_call = False  # 标记是否检测到工具调用
+        sent_contents = []  # 用于去重 - 记录已发送的内容
+        
+        for chunk in response.iter_lines():
+            if chunk:
+                try:
+                    line = chunk.decode('utf-8')
+                    if line.startswith('data: '):
+                        data_str = line[6:]
+                        if data_str == '[DONE]':
+                            break
+                        try:
+                             chunk_data = json.loads(data_str)
+                             delta = chunk_data.get('choices', [{}])[0].get('delta', {})
+                             
+                             # 处理工具调用 - 流式收集
+                             if 'tool_calls' in delta and delta['tool_calls']:
+                                 has_tool_call = True
+                                 for idx, tc in enumerate(delta['tool_calls']):
+                                     # 使用 index 来区分不同的 tool_call
+                                     if idx not in tool_calls_collected:
+                                         tool_calls_collected[idx] = {
+                                             'id': tc.get('id', ''),
+                                             'type': tc.get('type', 'function'),
+                                             'function': {'name': '', 'arguments': ''}
+                                         }
+                                     # 更新 function 信息
+                                     if 'function' in tc:
+                                         if 'name' in tc['function'] and tc['function']['name']:
+                                             tool_calls_collected[idx]['function']['name'] = tc['function']['name']
+                                         if 'arguments' in tc['function'] and tc['function']['arguments']:
+                                             tool_calls_collected[idx]['function']['arguments'] += tc['function']['arguments']
+                             
+                             # 处理内容 - 有工具调用时完全跳过第一次 LLM 的内容
+                             # 只在第二次 LLM 调用时发送内容
+                             if 'content' in delta and delta['content']:
+                                 # 不发送第一次 LLM 的任何内容，等第二次调用
+                                 pass
+                                
+                        except json.JSONDecodeError:
+                            continue
+                except Exception as e:
+                    print(f"处理chunk出错: {e}")
+                    continue
+
+        # 转换为列表
+        tool_calls = list(tool_calls_collected.values()) if tool_calls_collected else []
+
+        # 检查是否需要调用工具
+        if tool_calls:
+            print(f"Function Calling: 检测到 {len(tool_calls)} 个工具调用")
+            for tc in tool_calls:
+                print(f"收集到的tool_call: id={tc['id']}, name={tc['function']['name']}, args={tc['function']['arguments']}")
+            
+            # 先发送工具调用开始消息
+            yield f"data: {{\"type\": \"tool_call_start\", \"count\": {len(tool_calls)}}}\n\n"
+            
+            # 执行工具调用
+            for tool_call in tool_calls:
+                try:
+                    func_name = tool_call.get('function', {}).get('name', '')
+                    func_args_str = tool_call.get('function', {}).get('arguments', '')
+                    
+                    if not func_name:
+                        print(f"跳过无效的工具调用: {tool_call}")
+                        continue
+                    
+                    print(f"工具参数原始: {func_args_str}")
+                    if not func_args_str:
+                        print(f"工具参数为空，使用空字典")
+                        func_args = {}
+                    else:
+                        func_args = json.loads(func_args_str)
+                    print(f"执行工具: {func_name}, 参数: {func_args}")
+
+                    tool_result = execute_tool(func_name, func_args)
+                    print(f"工具返回: {tool_result}")
+
+                    # 发送工具结果 - tool_result 已经是 JSON 字符串，不需要再 json.dumps
+                    try:
+                        # 验证 tool_result 是有效的 JSON
+                        json.loads(tool_result)
+                        yield f"data: {{\"type\": \"tool_result\", \"name\": \"{func_name}\", \"result\": {tool_result}}}\n\n"
+                    except json.JSONDecodeError:
+                        # 如果不是有效 JSON，转义处理
+                        yield f"data: {{\"type\": \"tool_result\", \"name\": \"{func_name}\", \"result\": {json.dumps(tool_result)}}}\n\n"
+
+                except Exception as e:
+                    print(f"执行工具调用失败: {e}")
+                    yield f"data: {{\"type\": \"tool_error\", \"error\": \"{str(e)}\"}}\n\n"
+                    continue
+
+                # 将工具结果添加到消息中
+                messages.append({
+                    "role": "assistant",
+                    "tool_calls": [tool_call]
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content": tool_result
+                })
+
+            # 再次流式调用 LLM 生成最终回复
+            second_system_prompt = """
+【重要】你刚刚调用了工具获取数据。现在必须将工具返回的JSON数据转换成自然语言回复客户。
+
+工具返回的是原始数据，你必须：
+1. 将JSON中的每个字段转换成友好的文字描述
+2. 绝对不要显示原始JSON给客户！
+3. 用客户能理解的方式表达
+
+示例：
+- 订单状态：不要说"status: 已发货"，要说"您的订单已经发货啦～"
+- 商品信息：不要说"product: iPhone 15 Pro"，要说"您购买的是 iPhone 15 Pro"
+- 快递信息：不要说"logistics_no: SF1234567890"，要说"快递单号是 SF1234567890"
+
+请用友好的语气回复客户，就像真人客服一样！
+"""
+            messages.append({"role": "system", "content": second_system_prompt})
+            
+            data2 = {
+                "model": chat_service.api_model,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": 500,
+                "stream": True
+            }
+
+            response2 = requests.post(
+                f"{chat_service.openai_base_url}/chat/completions",
+                headers=headers,
+                json=data2,
+                timeout=config.llm.timeout,
+                stream=True
+            )
+
+            if response2.status_code == 200:
+                for chunk in response2.iter_lines():
+                    if chunk:
+                        try:
+                            line = chunk.decode('utf-8')
+                            if line.startswith('data: '):
+                                data_str = line[6:]
+                                if data_str == '[DONE]':
+                                    break
+                                try:
+                                    chunk_data = json.loads(data_str)
+                                    delta = chunk_data.get('choices', [{}])[0].get('delta', {})
+                                    if 'content' in delta and delta['content']:
+                                        content = delta['content']
+                                        print(f"[PYTHON DEBUG] yield content: {repr(content)}")
+                                        yield f"data: {{\"content\": {json.dumps(content)}, \"type\": \"content\"}}\n\n"
+                                except json.JSONDecodeError:
+                                    continue
+                        except Exception as e:
+                            print(f"处理二次调用chunk出错: {e}")
+                            continue
+            else:
+                yield f"data: {{\"error\": \"二次调用失败: {response2.status_code}\"}}\n\n"
+
+        # 发送完成消息
+        yield f"data: {{\"type\": \"done\"}}\n\n"
+
+    except Exception as e:
+        import traceback
+        print(f"流式生成回复失败: {e}")
+        print(traceback.format_exc())
+        try:
+            yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+        except:
+            pass
 
 
 def _check_flow_interrupt(chat_service: ChatService, request: InterruptCheckRequest) -> InterruptCheckResponse:

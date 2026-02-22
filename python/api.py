@@ -65,6 +65,34 @@ def chat_endpoint(req: ChatRequest):
     )
 
 
+@router.post("/chat/stream")
+def chat_stream_endpoint(req: ChatRequest):
+    """流式聊天端点，使用SSE返回"""
+    from fastapi.responses import StreamingResponse
+    import json
+    
+    print(f"收到流式聊天请求: message={req.message}, intent={req.intent}, flow_id={req.flow_id}")
+
+    def event_generator():
+        try:
+            # 调用流式生成函数
+            for chunk in chat_service.generate_reply_stream(req.message, req.intent or "unknown", req.flow_id, req.history):
+                yield chunk
+        except Exception as e:
+            print(f"流式聊天出错: {e}")
+            yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
 @router.post("/intent/recognize", response_model=IntentRecognitionResponse)
 def recognize_intent_endpoint(req: IntentRecognitionRequest):
     """只做意图识别，不生成回复"""

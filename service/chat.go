@@ -20,6 +20,11 @@ type ChatService struct {
 	decisionLayer *DecisionLayer
 }
 
+// GetAIClient 获取AI客户端
+func (s *ChatService) GetAIClient() *aiclient.Client {
+	return s.ai
+}
+
 // NewChatService 创建ChatService实例
 func NewChatService(ai *aiclient.Client, store *dao.RedisStore, intentDefs []model.IntentDefinition) *ChatService {
 	svc := &ChatService{

@@ -297,3 +297,13 @@ func (c *Client) CallFlowTool(toolName string, params map[string]string) (string
 
 	return fr.Result, nil
 }
+
+func (c *Client) ChatStream(params map[string]interface{}) (*http.Response, error) {
+	bs, _ := json.Marshal(params)
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/chat/stream", bytes.NewReader(bs))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	return c.httpCli.Do(httpReq)
+}

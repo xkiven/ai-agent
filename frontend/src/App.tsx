@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { ChatWindow } from './components/ChatWindow';
 import { InputArea } from './components/InputArea';
-import { sendMessage, getSessionHistory } from './api/chat';
+import { sendMessageStream, getSessionHistory } from './api/chat';
 import type { Message, SessionState, IntentType } from './types';
 
 function generateId(): string {
@@ -65,6 +65,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  
+  const contentRef = useRef<string>('');
 
   const handleSend = useCallback(async (content: string) => {
     const userMsg: Message = { role: 'user', content, timestamp: new Date().toISOString() };
@@ -72,33 +74,50 @@ export default function App() {
     setLoading(true);
     setError(null);
 
+    const history: Message[] = messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const assistantMsg: Message = {
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, assistantMsg]);
+    contentRef.current = '';  // 重置 ref
+
     try {
-      const history: Message[] = messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      const res = await sendMessage({
-        session_id: sessionId,
-        message: content,
-        user_id: userId,
-        history,
-      });
-
-      const assistantMsg: Message = {
-        role: 'assistant',
-        content: res.reply,
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-      setSessionState(res.session_state);
-      setIntentType(res.type);
+      await sendMessageStream(
+        {
+          session_id: sessionId,
+          message: content,
+          user_id: userId,
+          history,
+        },
+        (chunk) => {
+          console.log('[APP DEBUG] onChunk called with:', chunk);
+          contentRef.current += chunk;  // 使用 ref 累积内容
+          setMessages((prev) => {
+            const newMsgs = [...prev];
+            newMsgs[newMsgs.length - 1].content = contentRef.current;
+            console.log('[APP DEBUG] updated content:', contentRef.current);
+            return newMsgs;
+          });
+        },
+        () => {
+          setLoading(false);
+        },
+        (err) => {
+          setError(err.message);
+          setLoading(false);
+        }
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : '请求失败');
-    } finally {
       setLoading(false);
     }
-  }, [sessionId, userId, messages]);
+  }, [sessionId, userId]);
 
   const handleClear = useCallback(() => {
     setMessages([]);
