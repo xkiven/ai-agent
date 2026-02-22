@@ -18,6 +18,21 @@ from knowledge_store import init_knowledge_store, get_knowledge_store
 
 router = APIRouter()
 
+
+# 执行工具请求/响应模型
+class ExecuteToolRequest(BaseModel):
+    """执行工具请求"""
+    tool_name: str
+    arguments: Dict[str, Any] = {}
+
+
+class ExecuteToolResponse(BaseModel):
+    """执行工具响应"""
+    success: bool
+    result: str
+    error: Optional[str] = None
+
+
 # 初始化意图向量服务
 init_intent_vector_service()
 
@@ -105,19 +120,6 @@ class AddKnowledgeResponse(BaseModel):
     success: bool
     count: int
     message: str
-
-
-class ExecuteToolRequest(BaseModel):
-    """执行工具请求"""
-    tool_name: str
-    arguments: Dict[str, Any] = {}
-
-
-class ExecuteToolResponse(BaseModel):
-    """执行工具响应"""
-    success: bool
-    result: str
-    error: Optional[str] = None
 
 
 @router.post("/knowledge/add", response_model=AddKnowledgeResponse)
