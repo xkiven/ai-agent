@@ -148,3 +148,21 @@ type Ticket struct {
 	CreatedAt   string       `json:"created_at"`
 	UpdatedAt   string       `json:"updated_at"`
 }
+
+type KnowledgeRequest struct {
+	Texts    []string         `json:"texts"`
+	Metadata []map[string]any `json:"metadata,omitempty"`
+}
+
+type KnowledgeResponse struct {
+	Success bool   `json:"success"`
+	Count   int    `json:"count,omitempty"`
+	Message string `json:"message"`
+}
+
+type KnowledgeListResponse struct {
+	Success bool             `json:"success"`
+	Data    []map[string]any `json:"data"`
+	Total   int              `json:"total"`
+	Message string           `json:"message"`
+}

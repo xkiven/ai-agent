@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from models import ChatRequest, ChatResponse, IntentRecognitionRequest, IntentRecognitionResponse, Ticket, InterruptCheckRequest, InterruptCheckResponse
 from services import ChatService, init_intent_vector_service
-from knowledge_store import init_knowledge_store
+from knowledge_store import init_knowledge_store, get_knowledge_store
 
 
 router = APIRouter()
@@ -98,6 +98,92 @@ def add_knowledge_endpoint(request: AddKnowledgeRequest):
             success=True,
             count=len(request.texts),
             message=f"成功添加 {len(request.texts)} 条知识"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ListKnowledgeResponse(BaseModel):
+    """知识列表响应"""
+    success: bool
+    data: List[Dict[str, Any]]
+    total: int
+    message: str
+
+
+@router.get("/knowledge/list", response_model=ListKnowledgeResponse)
+def list_knowledge_endpoint(limit: int = 100, offset: int = 0):
+    """获取知识列表"""
+    try:
+        store = get_knowledge_store()
+        if not store:
+            raise HTTPException(status_code=500, detail="知识库未初始化")
+        data = store.list_knowledge(limit, offset)
+        total = store.count()
+        return ListKnowledgeResponse(
+            success=True,
+            data=data,
+            total=total,
+            message=f"获取成功，共 {total} 条知识"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DeleteKnowledgeResponse(BaseModel):
+    """删除知识响应"""
+    success: bool
+    message: str
+
+
+@router.delete("/knowledge/delete", response_model=DeleteKnowledgeResponse)
+def delete_knowledge_endpoint(index: int):
+    """删除指定索引的知识"""
+    try:
+        store = get_knowledge_store()
+        if not store:
+            raise HTTPException(status_code=500, detail="知识库未初始化")
+        success = store.delete(index)
+        if success:
+            return DeleteKnowledgeResponse(success=True, message=f"成功删除索引 {index} 的知识")
+        else:
+            raise HTTPException(status_code=404, detail=f"索引 {index} 不存在")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/knowledge/clear", response_model=DeleteKnowledgeResponse)
+def clear_knowledge_endpoint():
+    """清空知识库"""
+    try:
+        store = get_knowledge_store()
+        if not store:
+            raise HTTPException(status_code=500, detail="知识库未初始化")
+        store.delete_all()
+        return DeleteKnowledgeResponse(success=True, message="知识库已清空")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CountKnowledgeResponse(BaseModel):
+    """知识数量响应"""
+    success: bool
+    count: int
+    message: str
+
+
+@router.get("/knowledge/count", response_model=CountKnowledgeResponse)
+def count_knowledge_endpoint():
+    """获取知识数量"""
+    try:
+        store = get_knowledge_store()
+        if not store:
+            raise HTTPException(status_code=500, detail="知识库未初始化")
+        count = store.count()
+        return CountKnowledgeResponse(
+            success=True,
+            count=count,
+            message=f"知识库共有 {count} 条知识"
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
