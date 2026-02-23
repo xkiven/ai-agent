@@ -25,6 +25,16 @@ func (d *DecisionLayer) Decide(ctx context.Context, req model.ChatRequest, sessi
 	log.Printf("[DecisionLayer] session=%s, state=%s, current_step=%s",
 		session.ID, session.State, session.CurrentStep)
 
+	// 如果会话已完成，直接重置为新会话
+	if session.State == model.SessionComplete {
+		log.Printf("[DecisionLayer] 会话已完成，重置为新会话")
+		session.State = model.SessionNew
+		session.FlowID = ""
+		session.CurrentStep = ""
+		session.FlowState = nil
+		return d.handleNotOnFlow(ctx, req, session)
+	}
+
 	// 场景1: 已在 Flow 中
 	if session.State == model.SessionOnFlow {
 		return d.handleOnFlow(ctx, req, session)

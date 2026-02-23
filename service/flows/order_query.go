@@ -63,7 +63,13 @@ func HandleOrderQueryStart(ctx context.Context, session *model.Session, userMess
 				log.Printf("[Flow order_query] 调用工具失败: %v", err)
 				return "查询失败，请稍后重试", true, "", nil
 			}
-			return fmt.Sprintf("订单 %s 的状态：\n%s\n\n如需其他帮助，请继续提问。", orderID, result), true, "", nil
+			// 将 JSON 结果转换成自然语言
+			formattedReply, err := aiClient.FormatToolResponse("query_order", result, userMessage)
+			if err != nil {
+				log.Printf("[Flow order_query] 格式化失败: %v", err)
+				return fmt.Sprintf("订单 %s 的状态：\n%s\n\n如需其他帮助，请继续提问。", orderID, result), true, "", nil
+			}
+			return formattedReply, true, "", nil
 		}
 
 		// 如果没有 aiClient，使用 Mock 数据
@@ -100,7 +106,13 @@ func HandleOrderQueryProcessing(ctx context.Context, session *model.Session, use
 			return "查询失败，请稍后重试", true, "", nil
 		}
 		log.Printf("[Flow order_query] 工具返回结果: %s", result)
-		return fmt.Sprintf("订单 %s 的状态：\n%s\n\n如需其他帮助，请继续提问。", orderID, result), true, "", nil
+		// 将 JSON 结果转换成自然语言
+		formattedReply, err := aiClient.FormatToolResponse("query_order", result, userMessage)
+		if err != nil {
+			log.Printf("[Flow order_query] 格式化失败: %v", err)
+			return fmt.Sprintf("订单 %s 的状态：\n%s\n\n如需其他帮助，请继续提问。", orderID, result), true, "", nil
+		}
+		return formattedReply, true, "", nil
 	}
 
 	// 如果没有 aiClient，使用 Mock 数据

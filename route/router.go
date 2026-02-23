@@ -14,6 +14,7 @@ func Register(r *gin.Engine, chatSvc *service.ChatService) {
 	chatGroup := r.Group("/chat")
 	{
 		chatGroup.POST("", api.ChatHandler(chatSvc))
+		chatGroup.POST("/stream", api.ChatStreamHandler(chatSvc))
 	}
 
 	intentGroup := r.Group("/intent")

@@ -120,3 +120,51 @@ func ClearSessionHandler(chatSvc *service.ChatService) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"message": "session cleared"})
 	}
 }
+
+func ChatStreamHandler(chatSvc *service.ChatService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req model.ChatRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+			return
+		}
+
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.Header("X-Accel-Buffering", "no")
+
+		params := map[string]interface{}{
+			"message":    req.Message,
+			"session_id": req.SessionID,
+			"user_id":    req.UserID,
+			"intent":     req.Intent,
+			"flow_id":    req.FlowID,
+		}
+		if len(req.History) > 0 {
+			params["history"] = req.History
+		}
+
+		aiClient := chatSvc.GetAIClient()
+		resp, err := aiClient.ChatStream(params)
+		if err != nil {
+			c.SSEvent("error", gin.H{"error": err.Error()})
+			c.Writer.Flush()
+			return
+		}
+		defer resp.Body.Close()
+
+		buf := make([]byte, 1024)
+		reader := resp.Body
+		for {
+			n, err := reader.Read(buf)
+			if n > 0 {
+				c.Writer.Write(buf[:n])
+				c.Writer.Flush()
+			}
+			if err != nil {
+				break
+			}
+		}
+	}
+}

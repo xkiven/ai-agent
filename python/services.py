@@ -19,6 +19,15 @@ except ImportError:
     IntentVectorService = None
     EmbeddingService = None
 
+try:
+    from intent_vector_service import IntentVectorService
+    from embedding_service import EmbeddingService
+    INTENT_VECTOR_AVAILABLE = True
+except ImportError:
+    INTENT_VECTOR_AVAILABLE = False
+    IntentVectorService = None
+    EmbeddingService = None
+
 
 # ==================== Function Calling Mock 数据 ====================
 MOCK_ORDERS = {
@@ -207,6 +216,71 @@ def execute_tool(tool_name: str, arguments: dict) -> str:
         return json.dumps({"error": f"执行工具失败: {str(e)}"}, ensure_ascii=False)
 
 
+def format_tool_result(tool_name: str, raw_result: str, user_message: str) -> str:
+    """将工具返回的原始 JSON 结果格式化成自然语言回复"""
+    try:
+        # 如果不是 JSON， 直接返回
+        try:
+            data = json.loads(raw_result)
+        except:
+            return raw_result
+        
+        # 检查是否有错误
+        if isinstance(data, dict) and "error" in data:
+            return f"查询失败：{data['error']}"
+        
+        # 构建格式化 prompt
+        format_prompt = f"""你是一个智能客服。请将以下工具返回的数据转换成自然、友好的语言回复客户。
+
+用户问题：{user_message}
+工具名称：{tool_name}
+原始数据：{raw_result}
+
+要求：
+1. 将JSON数据转换成自然语言描述
+2. 不要显示原始JSON数据给客户
+3. 用友好的语气回复客户
+4. 如果需要，可以添加适当的emoji表情
+5. 结尾可以加一句"如需其他帮助，请继续提问。"
+
+请直接输出回复内容，不要输出其他内容。
+"""
+        # 调用 LLM
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {config.llm.api_key}"
+        }
+        
+        messages = [
+            {"role": "system", "content": format_prompt},
+            {"role": "user", "content": "请格式化以上数据"}
+        ]
+        
+        data = {
+            "model": config.llm.model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 500
+        }
+        
+        response = requests.post(
+            f"{config.llm.base_url}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=config.llm.timeout
+        )
+        
+        if response.status_code != 200:
+            return raw_result
+        
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+        
+    except Exception as e:
+        # 如果格式化失败，返回原始结果
+        return raw_result
+
+
 # 全局意图向量服务
 _intent_vector_service: Optional[object] = None
 
@@ -269,6 +343,10 @@ class ChatService:
     def check_flow_interrupt(self, request: InterruptCheckRequest) -> InterruptCheckResponse:
         """检查是否应该打断当前Flow"""
         return _check_flow_interrupt(self, request)
+
+    def generate_reply_stream(self, message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None):
+        """流式生成回复"""
+        return generate_reply_stream(self, message, intent, flow_id, history)
 
     def retrieve_context(self, query: str, top_k: int = 3) -> str:
         """从向量库检索相关上下文"""
@@ -478,34 +556,43 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
         context = _retrieve_context(chat_service, message, top_k=3)
 
     system_prompt = f""" 
-    你是一个智能客服助手，不说废话，直接回答用户问题。 
-    当前意图类型: {intent} 
-    当前流程ID: {flow_id} 
-    """
+你是一个智能客服助手。请用自然、友好的语言回答客户的问题。
+
+当前意图类型: {intent} 
+当前流程ID: {flow_id} 
+
+【重要】如果需要查询订单或物流信息，必须调用工具获取数据。
+
+【工具返回结果处理】
+当工具返回JSON数据时，你必须：
+1. 将JSON数据转换成自然语言描述
+2. 不要直接显示原始JSON数据给客户
+3. 用友好的方式呈现信息，例如：
+   - 原始: {{"order_id": "123456", "status": "已发货", "product": "iPhone 15"}}
+   - 正确: 您的订单(123456)已经发货啦！商品是iPhone 15，预计今天内送达～
+   - 原始: {{"logistics_no": "SF1234567890", "status": "派送中"}}
+   - 正确: 您的快递(SF1234567890)正在派送中，派送员马上就会送到您手中啦！
+"""
 
     # 添加知识库上下文
     if context:
         system_prompt += f"""
-    下面是知识库中与用户问题相关的参考信息：
-    {context}
+下面是知识库中与用户问题相关的参考信息：
+{context}
 
-    规则：
-    - 请优先基于以上知识库信息回答用户问题
-    - 如果知识库中没有相关信息，请如实说明
-    - 如果是 flow，请引导用户继续完成该流程 
-    - 如果是 unknown，请礼貌说明并建议转人工 
-    - 如果用户询问订单、物流相关信息，可以使用工具查询
-    - 如果用户需要投诉或转人工，可以使用工具创建工单
-    """
+规则：
+- 请优先基于以上知识库信息回答用户问题
+- 如果知识库中没有相关信息，请如实说明
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
     else:
         system_prompt += """
-    规则： 
-    - 如果是 flow，请引导用户继续完成该流程 
-    - 如果是 faq，请直接回答用户问题 
-    - 如果是 unknown，请礼貌说明并建议转人工 
-    - 如果用户询问订单、物流相关信息，可以使用工具查询
-    - 如果用户需要投诉或转人工，可以使用工具创建工单
-    """
+规则： 
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 faq，请直接回答用户问题 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -573,6 +660,23 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
                 })
 
             # 再次调用 LLM 生成最终回复
+            second_system_prompt = """
+【重要】你刚刚调用了工具获取数据。现在必须将工具返回的JSON数据转换成自然语言回复客户。
+
+工具返回的是原始数据，你必须：
+1. 将JSON中的每个字段转换成友好的文字描述
+2. 绝对不要显示原始JSON给客户！
+3. 用客户能理解的方式表达
+
+示例：
+- 订单状态：不要说"status: 已发货"，要说"您的订单已经发货啦～"
+- 商品信息：不要说"product: iPhone 15 Pro"，要说"您购买的是 iPhone 15 Pro"
+- 快递信息：不要说"logistics_no: SF1234567890"，要说"快递单号是 SF1234567890"
+
+请用友好的语气回复客户，就像真人客服一样！
+"""
+            messages.append({"role": "system", "content": second_system_prompt})
+            
             data2 = {
                 "model": chat_service.api_model,
                 "messages": messages,
@@ -600,35 +704,308 @@ def _generate_reply(chat_service: ChatService, message: str, intent: str, flow_i
         return "抱歉，当前系统繁忙，请稍后再试。"
 
 
+def generate_reply_stream(chat_service: ChatService, message: str, intent: str, flow_id: Optional[str] = None, history: Optional[List[Message]] = None):
+    """流式生成回复 - 生成器版本"""
+    
+    # RAG: 如果是 faq 意图，先检索相关知识
+    context = ""
+    if intent == "faq" or intent == "unknown":
+        context = _retrieve_context(chat_service, message, top_k=3)
+
+    system_prompt = f""" 
+你是一个智能客服助手。请用自然、友好的语言回答客户的问题。
+
+当前意图类型: {intent} 
+当前流程ID: {flow_id} 
+
+【重要】如果需要查询订单或物流信息，必须调用工具获取数据。
+
+【工具返回结果处理】
+当工具返回JSON数据时，你必须：
+1. 将JSON数据转换成自然语言描述
+2. 不要直接显示原始JSON数据给客户
+3. 用友好的方式呈现信息，例如：
+   - 原始: {{"order_id": "123456", "status": "已发货", "product": "iPhone 15"}}
+   - 正确: 您的订单(123456)已经发货啦！商品是iPhone 15，预计今天内送达～
+   - 原始: {{"logistics_no": "SF1234567890", "status": "派送中"}}
+   - 正确: 您的快递(SF1234567890)正在派送中，派送员马上就会送到您手中啦！
+"""
+
+    # 添加知识库上下文
+    if context:
+        system_prompt += f"""
+下面是知识库中与用户问题相关的参考信息：
+{context}
+
+规则：
+- 请优先基于以上知识库信息回答用户问题
+- 如果知识库中没有相关信息，请如实说明
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
+    else:
+        system_prompt += """
+规则： 
+- 如果是 flow，请引导用户继续完成该流程 
+- 如果是 faq，请直接回答用户问题 
+- 如果是 unknown，请礼貌说明并建议转人工 
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+    ]
+
+    # 加入历史对话
+    if history:
+        for msg in history:
+            messages.append({"role": msg.role, "content": msg.content})
+
+    # 加入当前用户消息
+    messages.append({"role": "user", "content": message})
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {chat_service.openai_api_key}"
+    }
+
+    data = {
+        "model": chat_service.api_model,
+        "messages": messages,
+        "tools": TOOLS,
+        "temperature": 0.2,
+        "max_tokens": 500,
+        "stream": True
+    }
+
+    try:
+        # 流式调用 LLM
+        response = requests.post(
+            f"{chat_service.openai_base_url}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=config.llm.timeout,
+            stream=True
+        )
+
+        if response.status_code != 200:
+            yield f"data: {{\"error\": \"API请求失败: {response.status_code}\"}}\n\n"
+            return
+
+        # 流式读取响应
+        tool_calls_raw = []  # 存储原始 tool_calls 块
+        tool_calls_collected = {}  # 收集完整的 tool_call
+        first_response_content = ""  # 收集第一次 LLM 的响应内容
+        has_tool_call = False  # 标记是否检测到工具调用
+        
+        for chunk in response.iter_lines():
+            if chunk:
+                try:
+                    line = chunk.decode('utf-8')
+                    if line.startswith('data: '):
+                        data_str = line[6:]
+                        if data_str == '[DONE]':
+                            break
+                        try:
+                            chunk_data = json.loads(data_str)
+                            delta = chunk_data.get('choices', [{}])[0].get('delta', {})
+                            
+                            # 处理工具调用 - 流式收集
+                            if 'tool_calls' in delta and delta['tool_calls']:
+                                has_tool_call = True
+                                for idx, tc in enumerate(delta['tool_calls']):
+                                    # 使用 index 来区分不同的 tool_call
+                                    if idx not in tool_calls_collected:
+                                        tool_calls_collected[idx] = {
+                                            'id': tc.get('id', ''),
+                                            'type': tc.get('type', 'function'),
+                                            'function': {'name': '', 'arguments': ''}
+                                        }
+                                    # 更新 function 信息
+                                    if 'function' in tc:
+                                        if 'name' in tc['function'] and tc['function']['name']:
+                                            tool_calls_collected[idx]['function']['name'] = tc['function']['name']
+                                        if 'arguments' in tc['function'] and tc['function']['arguments']:
+                                            tool_calls_collected[idx]['function']['arguments'] += tc['function']['arguments']
+                            
+                            # 收集第一次 LLM 的内容，并实时发送
+                            if 'content' in delta and delta['content']:
+                                first_response_content += delta['content']
+                                yield f"data: {{\"content\": {json.dumps(delta['content'])}, \"type\": \"content\"}}\n\n"
+                                 
+                        except json.JSONDecodeError:
+                            continue
+                except Exception as e:
+                    print(f"处理chunk出错: {e}")
+                    continue
+
+        # 检查是否需要调用工具
+        if has_tool_call:
+            # 有工具调用：跳过第一次内容，使用第二次 LLM 的结果
+            tool_calls = list(tool_calls_collected.values()) if tool_calls_collected else []
+            print(f"Function Calling: 检测到 {len(tool_calls)} 个工具调用")
+            for tc in tool_calls:
+                print(f"收集到的tool_call: id={tc['id']}, name={tc['function']['name']}, args={tc['function']['arguments']}")
+            
+            # 先发送工具调用开始消息
+            yield f"data: {{\"type\": \"tool_call_start\", \"count\": {len(tool_calls)}}}\n\n"
+            
+            # 执行工具调用
+            for tool_call in tool_calls:
+                try:
+                    func_name = tool_call.get('function', {}).get('name', '')
+                    func_args_str = tool_call.get('function', {}).get('arguments', '')
+                    
+                    if not func_name:
+                        print(f"跳过无效的工具调用: {tool_call}")
+                        continue
+                    
+                    print(f"工具参数原始: {func_args_str}")
+                    if not func_args_str:
+                        print(f"工具参数为空，使用空字典")
+                        func_args = {}
+                    else:
+                        func_args = json.loads(func_args_str)
+                    print(f"执行工具: {func_name}, 参数: {func_args}")
+
+                    tool_result = execute_tool(func_name, func_args)
+                    print(f"工具返回: {tool_result}")
+
+                    # 发送工具结果 - tool_result 已经是 JSON 字符串，不需要再 json.dumps
+                    try:
+                        # 验证 tool_result 是有效的 JSON
+                        json.loads(tool_result)
+                        yield f"data: {{\"type\": \"tool_result\", \"name\": \"{func_name}\", \"result\": {tool_result}}}\n\n"
+                    except json.JSONDecodeError:
+                        # 如果不是有效 JSON，转义处理
+                        yield f"data: {{\"type\": \"tool_result\", \"name\": \"{func_name}\", \"result\": {json.dumps(tool_result)}}}\n\n"
+
+                except Exception as e:
+                    print(f"执行工具调用失败: {e}")
+                    yield f"data: {{\"type\": \"tool_error\", \"error\": \"{str(e)}\"}}\n\n"
+                    continue
+
+                # 将工具结果添加到消息中
+                messages.append({
+                    "role": "assistant",
+                    "tool_calls": [tool_call]
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content": tool_result
+                })
+
+            # 再次流式调用 LLM 生成最终回复
+            second_system_prompt = """
+【重要】你刚刚调用了工具获取数据。现在必须将工具返回的JSON数据转换成自然语言回复客户。
+
+工具返回的是原始数据，你必须：
+1. 将JSON中的每个字段转换成友好的文字描述
+2. 绝对不要显示原始JSON给客户！
+3. 用客户能理解的方式表达
+
+示例：
+- 订单状态：不要说"status: 已发货"，要说"您的订单已经发货啦～"
+- 商品信息：不要说"product: iPhone 15 Pro"，要说"您购买的是 iPhone 15 Pro"
+- 快递信息：不要说"logistics_no: SF1234567890"，要说"快递单号是 SF1234567890"
+
+请用友好的语气回复客户，就像真人客服一样！
+"""
+            messages.append({"role": "system", "content": second_system_prompt})
+            
+            data2 = {
+                "model": chat_service.api_model,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": 500,
+                "stream": True
+            }
+
+            response2 = requests.post(
+                f"{chat_service.openai_base_url}/chat/completions",
+                headers=headers,
+                json=data2,
+                timeout=config.llm.timeout,
+                stream=True
+            )
+
+            if response2.status_code == 200:
+                for chunk in response2.iter_lines():
+                    if chunk:
+                        try:
+                            line = chunk.decode('utf-8')
+                            if line.startswith('data: '):
+                                data_str = line[6:]
+                                if data_str == '[DONE]':
+                                    break
+                                try:
+                                    chunk_data = json.loads(data_str)
+                                    delta = chunk_data.get('choices', [{}])[0].get('delta', {})
+                                    if 'content' in delta and delta['content']:
+                                        content = delta['content']
+                                        print(f"[PYTHON DEBUG] yield content: {repr(content)}")
+                                        yield f"data: {{\"content\": {json.dumps(content)}, \"type\": \"content\"}}\n\n"
+                                except json.JSONDecodeError:
+                                    continue
+                        except Exception as e:
+                            print(f"处理二次调用chunk出错: {e}")
+                            continue
+            else:
+                yield f"data: {{\"error\": \"二次调用失败: {response2.status_code}\"}}\n\n"
+
+        # 发送完成消息
+        yield f"data: {{\"type\": \"done\"}}\n\n"
+
+    except Exception as e:
+        import traceback
+        print(f"流式生成回复失败: {e}")
+        print(traceback.format_exc())
+        try:
+            yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+        except:
+            pass
+
+
 def _check_flow_interrupt(chat_service: ChatService, request: InterruptCheckRequest) -> InterruptCheckResponse:
     """检查是否应该打断当前Flow - 具体实现"""
     print(f"Flow中断检查: session={request.session_id}, flow={request.flow_id}, step={request.current_step}")
     
     # 构建系统提示
     system_prompt = f"""
-    你是一个Flow中断判断助手。请根据用户在当前流程中的输入，判断是否应该打断当前流程。
+你是一个Flow中断判断助手。请根据用户在当前流程中的输入，判断是否应该打断当前流程。
 
-    当前流程信息：
-    - 流程ID: {request.flow_id}
-    - 当前步骤: {request.current_step}
-    - 流程状态: {request.flow_state}
+当前流程信息：
+- 流程ID: {request.flow_id}
+- 当前步骤: {request.current_step}
+- 流程状态: {request.flow_state}
 
-    用户输入: {request.user_message}
+用户输入: {request.user_message}
 
-    判断规则：
-    1. 如果用户明确表示要退出、取消、停止当前流程，应该打断
-    2. 如果用户询问与当前流程无关的问题，应该打断
-    3. 如果用户输入包含明显的错误或误解，应该打断
-    4. 如果用户只是继续当前流程的正常操作，不应该打断
+【重要】判断规则（必须严格遵守）：
 
-    请以JSON格式返回判断结果，格式如下：
-    {{
-        "should_interrupt": true/false,
-        "confidence": 0-1之间的置信度,
-        "new_intent": "如果打断，建议的新意图类型(可选)",
-        "reason": "判断理由(可选)"
-    }}
-    """
+1. 应该打断的情况（should_interrupt=true）：
+   - 用户明确说"取消"、"退出"、"不办了"、"停止"、"算了"
+   - 用户说了一个完整的新意图，如"我要退货"、"我要投诉"、"帮我查物流"
+   - 用户明确要求转人工
+
+2. 不应该打断的情况（should_interrupt=false）：
+   - 用户输入只是简单的数字、字母、订单号、快递单号（如"123456"、"SF123456"）
+   - 用户在回答当前流程的问题（如问订单号就给了订单号）
+   - 用户输入是对当前流程问题的补充说明
+   - 用户只是确认或继续当前流程（如"好的"、"是的"、"继续"）
+
+【关键判断】
+如果用户输入看起来像是在回答当前流程的问题（如流程问订单号，用户给了订单号），
+或者只是一个简单的标识符（数字、字母），请优先认为用户是在继续当前流程！
+
+请以JSON格式返回判断结果，格式如下：
+{{
+    "should_interrupt": true/false,
+    "confidence": 0-1之间的置信度,
+    "new_intent": "如果打断，建议的新意图类型(可选)",
+    "reason": "判断理由(可选)"
+}}
+"""
 
     messages = [
         {"role": "system", "content": system_prompt},
