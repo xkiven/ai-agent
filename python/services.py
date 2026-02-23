@@ -794,9 +794,8 @@ def generate_reply_stream(chat_service: ChatService, message: str, intent: str, 
         # 流式读取响应
         tool_calls_raw = []  # 存储原始 tool_calls 块
         tool_calls_collected = {}  # 收集完整的 tool_call
-        assistant_content = ""
+        first_response_content = ""  # 收集第一次 LLM 的响应内容
         has_tool_call = False  # 标记是否检测到工具调用
-        sent_contents = []  # 用于去重 - 记录已发送的内容
         
         for chunk in response.iter_lines():
             if chunk:
@@ -807,44 +806,42 @@ def generate_reply_stream(chat_service: ChatService, message: str, intent: str, 
                         if data_str == '[DONE]':
                             break
                         try:
-                             chunk_data = json.loads(data_str)
-                             delta = chunk_data.get('choices', [{}])[0].get('delta', {})
-                             
-                             # 处理工具调用 - 流式收集
-                             if 'tool_calls' in delta and delta['tool_calls']:
-                                 has_tool_call = True
-                                 for idx, tc in enumerate(delta['tool_calls']):
-                                     # 使用 index 来区分不同的 tool_call
-                                     if idx not in tool_calls_collected:
-                                         tool_calls_collected[idx] = {
-                                             'id': tc.get('id', ''),
-                                             'type': tc.get('type', 'function'),
-                                             'function': {'name': '', 'arguments': ''}
-                                         }
-                                     # 更新 function 信息
-                                     if 'function' in tc:
-                                         if 'name' in tc['function'] and tc['function']['name']:
-                                             tool_calls_collected[idx]['function']['name'] = tc['function']['name']
-                                         if 'arguments' in tc['function'] and tc['function']['arguments']:
-                                             tool_calls_collected[idx]['function']['arguments'] += tc['function']['arguments']
-                             
-                             # 处理内容 - 有工具调用时完全跳过第一次 LLM 的内容
-                             # 只在第二次 LLM 调用时发送内容
-                             if 'content' in delta and delta['content']:
-                                 # 不发送第一次 LLM 的任何内容，等第二次调用
-                                 pass
-                                
+                            chunk_data = json.loads(data_str)
+                            delta = chunk_data.get('choices', [{}])[0].get('delta', {})
+                            
+                            # 处理工具调用 - 流式收集
+                            if 'tool_calls' in delta and delta['tool_calls']:
+                                has_tool_call = True
+                                for idx, tc in enumerate(delta['tool_calls']):
+                                    # 使用 index 来区分不同的 tool_call
+                                    if idx not in tool_calls_collected:
+                                        tool_calls_collected[idx] = {
+                                            'id': tc.get('id', ''),
+                                            'type': tc.get('type', 'function'),
+                                            'function': {'name': '', 'arguments': ''}
+                                        }
+                                    # 更新 function 信息
+                                    if 'function' in tc:
+                                        if 'name' in tc['function'] and tc['function']['name']:
+                                            tool_calls_collected[idx]['function']['name'] = tc['function']['name']
+                                        if 'arguments' in tc['function'] and tc['function']['arguments']:
+                                            tool_calls_collected[idx]['function']['arguments'] += tc['function']['arguments']
+                            
+                            # 收集第一次 LLM 的内容，并实时发送
+                            if 'content' in delta and delta['content']:
+                                first_response_content += delta['content']
+                                yield f"data: {{\"content\": {json.dumps(delta['content'])}, \"type\": \"content\"}}\n\n"
+                                 
                         except json.JSONDecodeError:
                             continue
                 except Exception as e:
                     print(f"处理chunk出错: {e}")
                     continue
 
-        # 转换为列表
-        tool_calls = list(tool_calls_collected.values()) if tool_calls_collected else []
-
         # 检查是否需要调用工具
-        if tool_calls:
+        if has_tool_call:
+            # 有工具调用：跳过第一次内容，使用第二次 LLM 的结果
+            tool_calls = list(tool_calls_collected.values()) if tool_calls_collected else []
             print(f"Function Calling: 检测到 {len(tool_calls)} 个工具调用")
             for tc in tool_calls:
                 print(f"收集到的tool_call: id={tc['id']}, name={tc['function']['name']}, args={tc['function']['arguments']}")
